@@ -3,6 +3,7 @@
 #include "hardware/clocks.h"
 #include "hardware/gpio.h"
 #include "hardware/pwm.h"
+#include "pico/time.h"
 
 typedef enum { LED_MODE_OFF, LED_MODE_ON, LED_MODE_BLINK } led_mode_t;
 
@@ -88,4 +89,57 @@ uint32_t led_actual_freq_mhz(void) {
 
 unsigned led_pin(void) {
     return s_pin;
+}
+
+// ---- Status protocol ---------------------------------------------------------------
+
+#define BLINK_ON_US   80000
+#define BLINK_GAP_US  220000
+#define PATTERN_US    2000000
+
+static alarm_id_t s_alarm;
+static unsigned s_pattern_blinks;   // 1 = PASS, 2 = FAIL
+static unsigned s_pattern_step;     // even = LED on, odd = LED off
+
+static int64_t pattern_cb(alarm_id_t id, void *user) {
+    (void)id; (void)user;
+    unsigned steps = s_pattern_blinks * 2;
+    unsigned step = s_pattern_step;
+    s_pattern_step = (step + 1) % steps;
+    if ((step & 1u) == 0) {
+        led_on();
+        return -BLINK_ON_US;   // negative: relative to the previous target, no drift
+    }
+    led_off();
+    if (step + 1 < steps) return -BLINK_GAP_US;
+    return -(int64_t)(PATTERN_US - s_pattern_blinks * BLINK_ON_US - (s_pattern_blinks - 1) * BLINK_GAP_US);
+}
+
+static void stop_pattern(void) {
+    if (s_alarm > 0) {
+        cancel_alarm(s_alarm);
+        s_alarm = 0;
+    }
+}
+
+void led_status(led_status_t status) {
+    stop_pattern();
+    switch (status) {
+    case LED_STATUS_OFF:
+        led_off();
+        break;
+    case LED_STATUS_TESTING:
+        led_blink(4000, 50);
+        break;
+    case LED_STATUS_WRITING:
+        led_on();
+        break;
+    case LED_STATUS_DONE_PASS:
+    case LED_STATUS_DONE_FAIL:
+        led_off();
+        s_pattern_blinks = status == LED_STATUS_DONE_PASS ? 1 : 2;
+        s_pattern_step = 0;
+        s_alarm = add_alarm_in_ms(500, pattern_cb, NULL, true);
+        break;
+    }
 }

@@ -50,9 +50,31 @@ string(SUBSTRING "${PICOBENCH_BUILD_HASH}" 0 8 PICOBENCH_BUILD_ID)
 configure_file(src/core/version.h.in ${CMAKE_CURRENT_BINARY_DIR}/generated/picobench_version.h @ONLY)
 
 # ---- Firmware -----------------------------------------------------------------
+option(PICOBENCH_DEBUG_CDC "Expose the text report over USB CDC after the run (development)" ON)
+option(PICOBENCH_TEST_CRASH "Include the debug.crash test that hangs on purpose" OFF)
+
 add_executable(picobench
     src/main.c
+    src/core/bench.c
+    src/core/clocks_ctl.c
+    src/core/guard.c
     src/core/led.c
+    src/core/platform.c
+    src/core/sequencer.c
+    src/core/stats.c
+    src/core/timing.c
+    src/results/crc32.c
+    src/results/record.c
+    src/results/report_text.c
+    src/results/sink.c
+    src/results/summary.c
+    src/tests/registry.c
+    src/tests/selftest.c
+)
+
+target_compile_definitions(picobench PRIVATE
+    PICOBENCH_DEBUG_CDC=$<BOOL:${PICOBENCH_DEBUG_CDC}>
+    $<$<BOOL:${PICOBENCH_TEST_CRASH}>:PICOBENCH_TEST_CRASH=1>
 )
 
 target_include_directories(picobench PRIVATE
@@ -64,12 +86,15 @@ target_compile_options(picobench PRIVATE -Wall -Wextra -Wno-unused-parameter)
 
 target_link_libraries(picobench
     pico_stdlib
+    pico_rand
     hardware_pwm
     hardware_clocks
+    hardware_pll
 )
 
-# No stdio transport during measurements; USB is brought up only for the report disk.
-pico_enable_stdio_usb(picobench 0)
+# No stdio transport during measurements. With PICOBENCH_DEBUG_CDC the USB CDC
+# console is linked but only initialised by main() after the run has finished.
+pico_enable_stdio_usb(picobench $<BOOL:${PICOBENCH_DEBUG_CDC}>)
 pico_enable_stdio_uart(picobench 0)
 
 pico_set_program_name(picobench "PicoBench")

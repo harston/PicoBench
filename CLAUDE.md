@@ -58,6 +58,18 @@ Build facts (verified in phase 0):
 `build.sh` must **back up existing UF2s in `dist/` before overwriting** — they are what
 gets flashed to hardware.
 
+- `PICOBENCH_VARIANT=crashtest ./build.sh` builds `dist/*_crashtest.uf2` with the
+  `debug.crash` test (id 990), which hangs on purpose to exercise watchdog recovery.
+- CMake option `PICOBENCH_DEBUG_CDC` (default ON until the USB disk exists): after the
+  run, the text report is printed on a USB CDC serial port (`screen /dev/cu.usbmodem*`).
+  Keys: `d` dump again, `r` re-run, `b` reboot to BOOTSEL.
+- **Toolchain caveat:** newlib FILE functions (`fwrite`, `fflush`, `fputs` on streams)
+  do not link with pqt-gcc (its newlib expects retargetable locks). Use `printf`
+  (wrapped by pico_printf), `stdio_put_string()` and `stdio_flush()`.
+- Host unit tests for platform-independent code (stats, CRC):
+  `worklog/tools/host_tests/run.sh`. Run them after changing `src/core/stats.c` or
+  `src/results/crc32.c`.
+
 ## Boot behaviour
 
 - The full test runs **once** after a new firmware is flashed (its build ID differs from
@@ -120,10 +132,32 @@ gets flashed to hardware.
 
 ### Adding a test
 
-1. Add a function in the matching `src/tests/*.c`, taking the test context.
-2. Register it in the test table with the right `chip_mask` and `risk_level`.
-3. Emit results only via the record API (cycles + stats + optional histogram).
-4. If it's risky, set `risk_level` so the sequencer arms the watchdog.
+1. Write `test_result_t test_xxx(test_ctx_t *ctx)` in the matching `src/tests/*.c` and
+   declare it in `src/tests/tests.h`.
+2. Add a row to `g_tests[]` in `src/tests/registry.c`: a **new, never reused ID** in
+   the subsystem's range, `chip_mask` (`CHIP_RP2040`, `CHIP_RP2350A/B`), and flags
+   (`TF_SWEEP` = also run at every operating point, `TF_RISKY`).
+3. Report only through the record API (`rec_stats`, `rec_value`, `rec_text`,
+   `rec_error`, `rec_hist`). Store cycles; the writers derive ns. Use the shared
+   `g_bench_samples[]` (exact percentiles) or `stats_stream_*` with
+   `g_bench_stream_bins` (millions of samples). Never format text inside a measurement.
+4. Measurement loops: IRQs off (`save_and_disable_interrupts`), code under test in
+   SRAM (`__not_in_flash_func`) unless XIP is what's being measured,
+   `timing_now()`/`timing_net()` around the work.
+5. A test running longer than ~4 s must call `guard_keepalive()` (watchdog is 5 s).
+6. Returning `TR_PASS` with `ctx->errors > 0` is turned into `TR_FAIL` automatically.
+
+### Crash recovery (verified design, phase 1)
+
+- The stage number is written to watchdog scratch before each stage. The results arena
+  lives in `.uninitialized_data`, so it survives a watchdog reset. A header with magic,
+  build ID, nonce and CRC32 decides whether the arena can be resumed.
+- After a reset inside a stage: resume at that stage, record `REC_CRASH` +
+  `TEST_CRASHED`, and continue with the next stage. If the arena is invalid, restart at
+  stage 0 and skip the crashed stage. After `GUARD_MAX_CRASHES` (8) crashes, stop testing
+  and report only.
+- RP2040 cycle timing uses the 24-bit SysTick: a single `timing_now()` interval must
+  stay below 2^24 cycles (~126 ms at 133 MHz).
 
 ## SRAM notes
 

@@ -33,4 +33,21 @@ uint32_t led_actual_freq_mhz(void);
 
 unsigned led_pin(void);
 
+// ---- Status protocol ---------------------------------------------------------------
+//   LED_STATUS_TESTING    ~4 Hz blink (PWM only)        tests running, do not unplug
+//   LED_STATUS_WRITING    solid on                      writing flash, do not unplug
+//   LED_STATUS_DONE_PASS  1 short blink every 2 s       finished, safe to unplug
+//   LED_STATUS_DONE_FAIL  2 short blinks every 2 s      finished with errors, safe to unplug
+// The DONE patterns use a hardware alarm (timer IRQ): only for the idle state after
+// all measurements are finished.
+typedef enum {
+    LED_STATUS_OFF = 0,
+    LED_STATUS_TESTING,
+    LED_STATUS_WRITING,
+    LED_STATUS_DONE_PASS,
+    LED_STATUS_DONE_FAIL,
+} led_status_t;
+
+void led_status(led_status_t status);
+
 #endif

@@ -2,6 +2,8 @@
 /build/
 # Previous UF2s kept by build.sh (the current ones in dist/ are tracked)
 /dist/backup/
+# Debug variants (PICOBENCH_VARIANT=crashtest) are not release artifacts
+/dist/*_crashtest.uf2
 # macOS
 .DS_Store
 # Python

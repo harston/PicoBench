@@ -4,6 +4,44 @@ Newest entry first. Each entry: what was done, decisions, hardware results, open
 
 ---
 
+## 2026-09-19 — Phase 1: core infrastructure
+
+**Done**
+- Commit `59e75d1`: phase 0 (the LED sequence works on every board: Pico and purple clone, Pico 2, WeAct RP2350B ARM and RISC-V).
+- `src/core/timing.[ch]`: one cycle-counter API. M33 uses DWT CYCCNT, Hazard3 uses `mcycle` (clears `mcountinhibit`), M0+ uses 24-bit SysTick. Read overhead is calibrated and subtracted by `timing_net()`.
+- `src/core/stats.[ch]`: exact percentiles via in-place heapsort (no extra RAM). A streaming collector keeps an exact per-cycle histogram below N bins, with log2 buckets above that marked `STATS_APPROX`.
+- `src/core/clocks_ctl.[ch]`: operating points (RP2040 48/96/120/125/133, RP2350 48/96/120/133/150 MHz) and full readback: frequency counter for every clock, PLL dividers and lock, clock mux registers, flash interface divider (SSI BAUDR / QMI M0 CLKDIV).
+- `src/core/guard.[ch]`: watchdog (5 s) plus stage number in watchdog scratch 0-3.
+- `src/results/record.[ch]`: binary TLV records in an arena in `.uninitialized_data` (RP2040 24 KB, RP2350 64 KB). The header is protected by CRC32 and the data by a running CRC32, so the arena can be resumed after a watchdog reset.
+- `src/core/sequencer.[ch]` + `src/tests/registry.c`: static test table with stable IDs. Stages are ordered as all tests at the default operating point, then `TF_SWEEP` tests at every other point. The sequencer logs each operating point's readback once and records N/A for chip-mismatched tests.
+- `src/core/led.[ch]`: status protocol. TESTING and WRITING use PWM; the PASS/FAIL patterns use a drift-free hardware alarm.
+- `src/results/summary.[ch]` (per-subsystem verdicts) and `report_text.[ch]` (text report, the basis for REPORT.TXT). Every cycle statistic is also shown in ns.
+- `main.c`: boot flow with crash resume and diagnostic mode. The debug USB CDC console after the run (`d`/`r`/`b`) is temporary until phase 2.
+- First tests: `core.timing_counter` (100: counter read cost plus cross-check against the 1 MHz timer), `clocks.readback` (101, sweep), `cpu.loop_smoke` (200, sweep, from SRAM with IRQs off), `debug.crash` (990, crashtest builds only).
+- `build.sh`: `PICOBENCH_VARIANT=crashtest`.
+- Host unit tests: `worklog/tools/host_tests/run.sh` covers CRC-32 check value, heapsort and percentiles against qsort, and streaming stats. Built with ASan/UBSan. All pass.
+
+**Findings**
+- The SDK defines `pll_sys` / `pll_usb` as macros, so they can't be used as struct field names.
+- Newlib FILE functions (`fwrite`, `fflush`) don't link with pqt-gcc (it needs `__retarget_lock_*`). Use the SDK stdio API instead (noted in CLAUDE.md).
+- RP2350 `SYSINFO.PACKAGE_SEL`: 0 = QFN80 (RP2350B), 1 = QFN60 (RP2350A), per the SDK register header.
+
+**Hardware verification (WeAct RP2350B, Cortex-M33; reports from the user)**
+- Normal UF2: 11/11 stages, OVERALL PASS. Measured clk_sys matches exactly at 48/96/120/133/150 MHz (PLL 1/120/6/5, 1/128/4/4, 1/120/6/2, 1/133/6/2, 1/125/5/2). QMI flash CLKDIV = 3 at every point. LED 4.471 Hz at 150 MHz and 4.00 Hz elsewhere, as predicted.
+- DWT CYCCNT back-to-back read = 1 cycle (the overhead). `loop100` = 299 cycles at every clock (2.99 cycles/iteration), so perfectly clock-independent from SRAM.
+- Counter vs 1 MHz timer: -120 / -153 ppm over 10 ms, about 1.2 µs of window-edge error (timer resolution plus `time_us_64` call cost), not a real clock error.
+- Crashtest UF2: `debug.crash` hung, the watchdog reset the chip (reason 0x1), the arena was **resumed from RAM without loss**, `TEST_CRASHED` was recorded, and all sweep stages ran after it. OVERALL FAIL, CORE FAIL (crashed 1). The watchdog + retention design works on RP2350.
+
+**Findings from hardware**
+- clk_peri is 150 MHz (= clk_sys) after boot, but `set_sys_clock_khz()` moves it to pll_usb 48 MHz and it stays there even back at 150 MHz. Fixed in phase 2: the default operating point is re-applied at boot, so clk_peri is 48 MHz at every point (consistent comparisons).
+- `cpu.loop_smoke` max 348 vs 299 cycles, only in the first sampled test after boot (at 150 MHz on a fresh boot, at 48 MHz after the crash resume). Probably an XIP cache miss of the flash-resident caller (the loop itself is in SRAM). Phase 5 (XIP cold/warm) will quantify this.
+- Not yet run on RP2040 and RISC-V; next time.
+
+**Next step**
+- Phase 2: flash results store (A/B, CRC, COMMITTED), streaming writer, read-only USB MSC with a virtual FAT, boot mode (build ID / button).
+
+---
+
 ## 2026-09-19 — Phase 0: bootstrap
 
 **Done**

@@ -46,9 +46,16 @@ Toolchains: the ARM and RISC-V gcc bundled with the Arduino core can be reused v
 After a build, check with `picotool info -a dist/*.uf2`.
 
 Build facts (verified in phase 0):
-- `PICO_BOARD=picobench` (`boards/picobench.h`) is used for all three platforms. It sets
-  only common denominators: 2 MB flash (bounds the image), LED GPIO25, W25Q080 boot
-  stage 2 for RP2040.
+- `PICO_BOARD=picobench` (`boards/picobench.h`) is used for all three platforms: LED
+  GPIO25, W25Q080 boot stage 2 for RP2040, and `PICO_FLASH_SIZE_BYTES` = **16 MB**.
+- **Two different "flash sizes" - never mix them up:**
+  - C define `PICO_FLASH_SIZE_BYTES` (board header) = the LARGEST supported chip (16 MB).
+    The SDK uses it at runtime: `flash_range_erase/program` `hard_assert` against it
+    (even in release builds), and on RP2350 it sets the FLASH_DEVINFO CS0 size. When it was
+    2 MB, every write to the WeAct results area (12 MB) panicked and the watchdog reset
+    the chip, so no report was ever saved.
+  - CMake `PICO_FLASH_SIZE_BYTES` (CMakeLists.txt) = 1 MB = linker FLASH region, i.e.
+    the firmware image limit.
 - RP2350 builds target the **B package** (`PICO_RP2350A` left at the SDK default 0 → 48
   GPIO). Code must check the real package at runtime before touching GPIO 30–47.
 - The SDK finds the Homebrew picotool 2.3.1 via its CMake config; nothing is downloaded.
@@ -60,21 +67,54 @@ gets flashed to hardware.
 
 - `PICOBENCH_VARIANT=crashtest ./build.sh` builds `dist/*_crashtest.uf2` with the
   `debug.crash` test (id 990), which hangs on purpose to exercise watchdog recovery.
-- CMake option `PICOBENCH_DEBUG_CDC` (default ON until the USB disk exists): after the
-  run, the text report is printed on a USB CDC serial port (`screen /dev/cu.usbmodem*`).
-  Keys: `d` dump again, `r` re-run, `b` reboot to BOOTSEL.
-- **Toolchain caveat:** newlib FILE functions (`fwrite`, `fflush`, `fputs` on streams)
-  do not link with pqt-gcc (its newlib expects retargetable locks). Use `printf`
-  (wrapped by pico_printf), `stdio_put_string()` and `stdio_flush()`.
-- Host unit tests for platform-independent code (stats, CRC):
-  `worklog/tools/host_tests/run.sh`. Run them after changing `src/core/stats.c` or
-  `src/results/crc32.c`.
+- After the run the board enumerates as a composite USB device (pid.codes test VID/PID
+  0x1209:0x0001): read-only disk `PICOBENCH` + CDC console (`screen /dev/cu.usbmodem*`,
+  keys: `d` REPORT.TXT, `e` ERRORS.TXT, `l` list runs, `r` re-run, `b` BOOTSEL).
+- **Toolchain caveat:** newlib FILE functions (`fwrite`, `fflush`, `fputs` on streams,
+  and `sscanf`, which pulls in the same code) do not link with pqt-gcc (its newlib
+  expects retargetable locks). Use `snprintf`/`vsnprintf` (wrapped by pico_printf) and
+  parse by hand.
+- Host tests: `worklog/tools/host_tests/run.sh` covers stats and CRC, and the results
+  store with simulated NOR flash and **power loss injected at every erase/program
+  operation**. It also generates the 16 MB FAT16 image, checks it with `fsck_msdos`, and
+  mounts it read-only on macOS to compare the files. **Run it after any change in
+  `src/core/stats.c`, `src/results/crc32.c`, `src/storage/` or `src/usb/msc_disk.c`.**
+
+## Flash layout and results store (phase 2)
+
+- Firmware image is capped at 1 MB (CMake `PICO_FLASH_SIZE_BYTES` = linker FLASH length).
+  The flash size is detected at runtime from the JEDEC capacity byte (fallback 2 MB).
+- From the end of flash: results area (512 KB / 1 MB / 2 MB / 4 MB for 2 / 4 / 8 / 16 MB
+  flash), and 64 KB of flash-write scratch just before it. See `src/storage/flash_layout.h`.
+- Results area = directory slot A, directory slot B, then a ring of run blobs. A
+  directory is valid only with magic + version + CRC32 + a COMMITTED word programmed
+  last in its own page; the higher sequence number wins. Runs that will be overwritten
+  are dropped in an intermediate directory commit *before* their sectors are erased.
+  Up to 16 runs are kept.
+- Stored files per run: REPORT.TXT, RESULTS.CSV, ERRORS.TXT (HARDWARE.TXT, RESULTS.JSON
+  and RAW.BIN come in later phases). Writers are called twice (size, then write) and must be
+  deterministic. They must not print anything that changes between the passes (e.g. the
+  directory sequence number).
+- The virtual disk (`src/usb/msc_disk.c`) is generated on the fly: 16 MB FAT16, 512-byte
+  clusters, files read straight from XIP. `README.TXT` is a firmware constant and
+  `STATUS.TXT` is rendered at boot (what this boot did, whether the save worked and why
+  not). Hidden `.Trashes` (a *file*, so Finder deletes immediately), `.metadata_never_index`
+  and `.fseventsd/no_log` keep macOS from filling the RAM overlay. They use VFAT long names.
+- Host writes are kept in a RAM overlay (the reused `g_bench_samples` buffer: 32 KB on
+  RP2040, 64 KB on RP2350). When a RUNxxxx directory entry disappears, that run is deleted
+  from the store 300 ms after the host goes quiet. `last_build_id` in the store directory
+  survives deletions, so deleting results never re-triggers the tests.
+- Saving is its own watchdog stage (stage number = number of test stages). A hang
+  while saving is retried once, then skipped.
 
 ## Boot behaviour
 
 - The full test runs **once** after a new firmware is flashed (its build ID differs from
-  the last committed run), or when the button is held at power-up (BOOTSEL; KEY GPIO23
-  on WeAct).
+  the latest stored run). To run again: hold BOOTSEL (or KEY GPIO23 on RP2350B) for 1 s
+  while the disk is shown (the LED goes solid while held), or press `r` on the console.
+  BOOTSEL held at *power-up* enters the ROM bootloader instead, which is not our code.
+- The KEY on GPIO23 is read polarity-agnostically (a change from the level sampled at
+  boot), and only on RP2350B: on Pico / Pico 2, GPIO23 is the SMPS mode pin.
 - Every other boot skips the tests and only mounts the report disk.
 - Flashing a new UF2 does not erase the results area, so run history survives upgrades.
 
@@ -103,7 +143,9 @@ gets flashed to hardware.
   results area is reserved in the linker script so the binary can never overlap it.
 - **Results store is A/B with CRC32 and a final COMMITTED word**: write to the inactive
   slot, read back and verify, then commit. Never touch the committed slot while writing.
-- **MSC is read-only** (`tud_msc_is_writable_cb` returns false).
+- **USB disk writes go to a RAM overlay.** The only change persisted to flash is
+  deleting `RUNS\RUNxxxx` (or `RUNS`), which becomes `store_delete_runs()` (A/B commit).
+  Never let the host write into the results area directly.
 - **Store raw cycles; derive ns** from the measured clk_sys. Always report
   min/p50/p95/p99/p99.9/max plus iteration counts and buffer sizes, never a mean alone.
   A PASS verdict must never hide a large max latency.

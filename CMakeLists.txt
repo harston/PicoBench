@@ -8,6 +8,9 @@ cmake_minimum_required(VERSION 3.13)
 # build.sh does all of this.
 
 set(PICO_BOARD picobench CACHE STRING "Board type")
+# Linker FLASH region = firmware image limit (1 MB). The real flash is detected at
+# runtime; the results store and scratch area live at its end (src/storage/).
+set(PICO_FLASH_SIZE_BYTES "1024 * 1024")
 set(PICO_BOARD_HEADER_DIRS ${CMAKE_CURRENT_LIST_DIR}/boards)
 
 include(cmake/pico_sdk_import.cmake)
@@ -50,12 +53,12 @@ string(SUBSTRING "${PICOBENCH_BUILD_HASH}" 0 8 PICOBENCH_BUILD_ID)
 configure_file(src/core/version.h.in ${CMAKE_CURRENT_BINARY_DIR}/generated/picobench_version.h @ONLY)
 
 # ---- Firmware -----------------------------------------------------------------
-option(PICOBENCH_DEBUG_CDC "Expose the text report over USB CDC after the run (development)" ON)
 option(PICOBENCH_TEST_CRASH "Include the debug.crash test that hangs on purpose" OFF)
 
 add_executable(picobench
     src/main.c
     src/core/bench.c
+    src/core/button.c
     src/core/clocks_ctl.c
     src/core/guard.c
     src/core/led.c
@@ -63,22 +66,30 @@ add_executable(picobench
     src/core/sequencer.c
     src/core/stats.c
     src/core/timing.c
+    src/results/boot_status.c
     src/results/crc32.c
     src/results/record.c
+    src/results/report_csv.c
+    src/results/report_errors.c
     src/results/report_text.c
     src/results/sink.c
     src/results/summary.c
+    src/storage/flash_layout.c
+    src/storage/results_store.c
     src/tests/registry.c
     src/tests/selftest.c
+    src/usb/console.c
+    src/usb/msc_disk.c
+    src/usb/usb_descriptors.c
 )
 
 target_compile_definitions(picobench PRIVATE
-    PICOBENCH_DEBUG_CDC=$<BOOL:${PICOBENCH_DEBUG_CDC}>
     $<$<BOOL:${PICOBENCH_TEST_CRASH}>:PICOBENCH_TEST_CRASH=1>
 )
 
 target_include_directories(picobench PRIVATE
     ${CMAKE_CURRENT_LIST_DIR}/src
+    ${CMAKE_CURRENT_LIST_DIR}/src/usb          # tusb_config.h
     ${CMAKE_CURRENT_BINARY_DIR}/generated
 )
 
@@ -89,12 +100,15 @@ target_link_libraries(picobench
     pico_rand
     hardware_pwm
     hardware_clocks
+    hardware_flash
     hardware_pll
+    pico_unique_id
+    tinyusb_device
 )
 
-# No stdio transport during measurements. With PICOBENCH_DEBUG_CDC the USB CDC
-# console is linked but only initialised by main() after the run has finished.
-pico_enable_stdio_usb(picobench $<BOOL:${PICOBENCH_DEBUG_CDC}>)
+# No stdio transport at all. USB (report disk + console, own TinyUSB descriptors) is
+# started by main() only after the run has finished and the report is committed.
+pico_enable_stdio_usb(picobench 0)
 pico_enable_stdio_uart(picobench 0)
 
 pico_set_program_name(picobench "PicoBench")

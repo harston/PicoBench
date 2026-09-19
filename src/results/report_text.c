@@ -10,6 +10,7 @@
 #include "picobench_version.h"
 #include "results/record.h"
 #include "results/summary.h"
+#include "storage/results_store.h"
 
 const char *unit_name(unsigned unit) {
     switch (unit) {
@@ -52,6 +53,7 @@ static void write_header(sink_t *o) {
     const run_state_t *st = record_run_state();
     sink_puts(o, "PicoBench - Pico Hardware Characterization & Benchmark\n");
     sink_puts(o, "=====================================================\n\n");
+    sink_printf(o, "Run number  : RUN%04lu\n", (unsigned long)store_next_run_no());
     sink_printf(o, "Firmware    : %s+%s%s  build %s  (%s)\n", PICOBENCH_VERSION, PICOBENCH_GIT_SHA,
                 PICOBENCH_GIT_DIRTY ? "-dirty" : "", PICOBENCH_BUILD_ID_STR, PICOBENCH_BUILD_TIME);
     sink_printf(o, "Platform    : %s  (Pico SDK %s)\n", PICOBENCH_PLATFORM, PICO_SDK_VERSION_STRING);
@@ -121,7 +123,9 @@ static void write_tests(sink_t *o) {
             const rec_crash_t *c = (const rec_crash_t *)h;
             const test_desc_t *t = registry_find(h->test_id);
             sink_printf(o, "  !! TEST_CRASHED: stage %lu (%s @ op %u), watchdog reason 0x%lx%s\n",
-                        (unsigned long)c->stage, t ? t->name : "?", h->op,
+                        (unsigned long)c->stage,
+                        c->stage == sequencer_stage_count() ? "saving the report" : (t ? t->name : "?"),
+                        h->op,
                         (unsigned long)c->watchdog_reason,
                         c->results_lost ? " - earlier results were lost, run restarted" : "");
             continue;

@@ -38,15 +38,16 @@ test_result_t test_timing_counter(test_ctx_t *ctx) {
     stats_from_samples(g_bench_samples, n, &s);
     rec_stats(ctx, "back_to_back_read", UNIT_CYCLES, 0, &s);
 
-    // Cross-check against the 1 MHz timer over 10 ms. On RP2040 the 24-bit SysTick
-    // covers ~126 ms at 133 MHz, so 10 ms is safely inside one counter period.
+    // Cross-check against the 1 MHz timer over 50 ms. On RP2040 the 24-bit SysTick
+    // covers ~126 ms at 133 MHz, so 50 ms is safely inside one counter period.
+    // (10 ms gave ~120-150 ppm of window-edge error on RP2350; 50 ms cuts it by 5x.)
     irq = save_and_disable_interrupts();
     uint64_t u0 = time_us_64();
     while (time_us_64() == u0) {}
     u0 = time_us_64();
     uint32_t c0 = timing_now();
     uint64_t u1;
-    do { u1 = time_us_64(); } while (u1 - u0 < 10000);
+    do { u1 = time_us_64(); } while (u1 - u0 < 50000);
     uint32_t c1 = timing_now();
     restore_interrupts(irq);
 
@@ -62,7 +63,7 @@ test_result_t test_timing_counter(test_ctx_t *ctx) {
     rec_value(ctx, "deviation", UNIT_PPM, dev);
 
     // Both sides derive from the same crystal, so they must agree to within the
-    // timer's 1 us resolution over 10 ms (100 ppm) plus a small margin.
+    // timer's 1 us resolution over 50 ms (20 ppm) plus call overhead; 500 ppm is lenient.
     if (abs(dev) > 500) {
         rec_error(ctx, "counter_vs_timer", 0, cfg_khz, counter_khz);
         return TR_FAIL;

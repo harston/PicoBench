@@ -26,10 +26,16 @@
 #define PICO_FLASH_SPI_CLKDIV 2
 #endif
 
-// Smallest flash among supported boards. The real size is detected at runtime;
-// this only bounds the firmware image in the linker script.
+// LARGEST flash among supported boards (WeAct RP2350B: 16 MB).
+// The SDK uses this C define at runtime: flash_range_erase/program hard_assert that
+// every access lies below it, and on RP2350 it sets the CS0 size in FLASH_DEVINFO.
+// It must therefore cover the largest supported chip; the firmware itself only
+// accesses flash inside the size it detects at runtime (src/storage/flash_layout.c).
+// (Phase 2 bug: this was 2 MB, so every write to the results area at 12 MB on the
+// WeAct panicked in hard_assert and the watchdog reset the chip.)
+// The firmware IMAGE limit is separate: CMake PICO_FLASH_SIZE_BYTES = 1 MB (linker).
 #ifndef PICO_FLASH_SIZE_BYTES
-#define PICO_FLASH_SIZE_BYTES (2 * 1024 * 1024)
+#define PICO_FLASH_SIZE_BYTES (16 * 1024 * 1024)
 #endif
 
 // Fallback LED pin. All supported boards use GPIO25; the board profile may override.

@@ -1,0 +1,8 @@
+#pragma once
+#define PICOBENCH_VERSION      "0.0.0"
+#define PICOBENCH_GIT_SHA      "hosttest"
+#define PICOBENCH_GIT_DIRTY    0
+#define PICOBENCH_BUILD_TIME   "2026-09-19T12:53:20Z"
+#define PICOBENCH_PLATFORM     "host"
+#define PICOBENCH_BUILD_ID     0x12345678u
+#define PICOBENCH_BUILD_ID_STR "12345678"

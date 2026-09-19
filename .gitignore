@@ -1,0 +1,9 @@
+# Build trees
+/build/
+# Previous UF2s kept by build.sh (the current ones in dist/ are tracked)
+/dist/backup/
+# macOS
+.DS_Store
+# Python
+__pycache__/
+*.pyc

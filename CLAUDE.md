@@ -113,8 +113,12 @@ gets flashed to hardware.
   the latest stored run). To run again: hold BOOTSEL (or KEY GPIO23 on RP2350B) for 1 s
   while the disk is shown (the LED goes solid while held), or press `r` on the console.
   BOOTSEL held at *power-up* enters the ROM bootloader instead, which is not our code.
-- The KEY on GPIO23 is read polarity-agnostically (a change from the level sampled at
-  boot), and only on RP2350B: on Pico / Pico 2, GPIO23 is the SMPS mode pin.
+- The KEY on GPIO23 is used only on RP2350B (on Pico / Pico 2 that pin is the SMPS mode
+  pin). It is an input with pull-up, active low. If it reads low for seconds after boot
+  it is not a button on that board and is ignored.
+- **A button held at boot must be released before it counts as a press.** The press that
+  requested the re-run is still held while the board reboots; without this rule one long
+  press produced two runs (observed on the WeAct).
 - Every other boot skips the tests and only mounts the report disk.
 - Flashing a new UF2 does not erase the results area, so run history survives upgrades.
 
@@ -162,7 +166,14 @@ gets flashed to hardware.
 - `src/main.c` — boot flow: retention check → run/skip decision → sequencer → report → MSC.
 - `src/core/` — timing (DWT CYCCNT on M33, `mcycle` on Hazard3, SysTick on M0+), stats,
   clock operating points, LED, watchdog guard, retention.
-- `src/detect/` — chip, board profile, flash ID, PSRAM detection, bootrom.
+- `src/detect/` — inventory tests (flag `TF_INVENTORY`, rendered into HARDWARE.TXT):
+  chip/ROM/OTP info, firmware/SDK/compiler, unique IDs, inferred board profile, memory
+  map, reset reason, temperature/VREG/VSYS, clock sources, flash identity (JEDEC +
+  vendor table, SFDP density, status registers, unique ID), flash interface (SSI / QMI
+  decode), PSRAM detection (RP2350: probes XIP_CS1 GPIOs 0/8/19/47, raw MFID/KGD/EID,
+  SDK default init, first/last word sanity), USB config.
+- `g_psram` (`src/detect/psram_info.h`) holds the PSRAM detection result for later
+  stages. It is RAM only and is not re-created after a crash-resume.
 - `src/tests/` — one file per subsystem; each test registers
   `{id, name, subsystem, chip_mask, risk_level, fn}` in the static test table.
 - `src/results/` — tests append binary TLV records to a RAM arena; writers stream
@@ -171,6 +182,11 @@ gets flashed to hardware.
 - `src/storage/` — results store at the end of flash: run history (RUN0001…), A/B slots.
 - `src/usb/` — TinyUSB MSC serving a virtual FAT volume whose file sectors map directly
   onto XIP flash.
+
+### Board facts learned on hardware
+
+- WeAct RP2350B: the flash JEDEC ID is `20 40 18` (XMC XM25QH128 class, manufacturer 0x20),
+  not Winbond as the WeAct docs say. 16 MB.
 
 ### Adding a test
 

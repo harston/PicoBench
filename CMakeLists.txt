@@ -71,9 +71,14 @@ add_executable(picobench
     src/results/record.c
     src/results/report_csv.c
     src/results/report_errors.c
+    src/results/report_hardware.c
     src/results/report_text.c
     src/results/sink.c
     src/results/summary.c
+    src/detect/board.c
+    src/detect/flash_info.c
+    src/detect/inventory.c
+    src/detect/psram_detect.c
     src/storage/flash_layout.c
     src/storage/results_store.c
     src/tests/registry.c
@@ -99,6 +104,7 @@ target_link_libraries(picobench
     pico_stdlib
     pico_rand
     hardware_pwm
+    hardware_adc
     hardware_clocks
     hardware_flash
     hardware_pll
@@ -108,6 +114,10 @@ target_link_libraries(picobench
 
 # No stdio transport at all. USB (report disk + console, own TinyUSB descriptors) is
 # started by main() only after the run has finished and the report is committed.
+if (PICO_PLATFORM MATCHES "rp2350")
+    target_link_libraries(picobench hardware_psram hardware_xip_cache)
+endif()
+
 pico_enable_stdio_usb(picobench 0)
 pico_enable_stdio_uart(picobench 0)
 

@@ -13,6 +13,13 @@ _Static_assert(PICO_FLASH_SIZE_BYTES >= 16u * 1024 * 1024,
 
 static flash_layout_t s_layout;
 
+// Read-only address-wrap probe: does the data at `off` read back as the data at 0?
+// The start of flash holds the firmware image (never uniform), so a match means the
+// chip is smaller than it claims and addresses have wrapped around.
+static bool aliases_start(uint32_t off) {
+    return memcmp(flash_xip_ptr(0), flash_xip_ptr(off), 256) == 0;
+}
+
 static uint32_t results_size_for(uint32_t flash_size) {
     if (flash_size >= 16u * 1024 * 1024) return 4u * 1024 * 1024;
     if (flash_size >= 8u * 1024 * 1024) return 2u * 1024 * 1024;
@@ -42,12 +49,27 @@ void flash_layout_init(void) {
         l->size_detected = false;
     }
 
+    l->jedec_size = l->flash_size;
+
+    // Trust, but verify: find the smallest power-of-two offset that wraps to offset 0.
+    for (uint32_t s = 256u * 1024u; s < l->jedec_size; s <<= 1) {
+        if (aliases_start(s)) {
+            l->alias_size = s;
+            l->flash_size = s;
+            break;
+        }
+    }
+
     l->fw_end = (uint32_t)((uintptr_t)&__flash_binary_end - 0x10000000u);
     l->results_size = results_size_for(l->flash_size);
     l->results_base = l->flash_size - l->results_size;
     l->scratch_base = l->results_base - FLASH_SCRATCH_BYTES;
+    // Last line of defence: if the results area still reads back as the firmware, the
+    // chip is smaller than anything we could prove - never write there.
+    l->results_area_aliased = aliases_start(l->results_base);
+
     l->valid = l->scratch_base >= PICOBENCH_FW_MAX_BYTES && l->fw_end <= PICOBENCH_FW_MAX_BYTES &&
-               l->flash_size <= PICO_FLASH_SIZE_BYTES;
+               l->flash_size <= PICO_FLASH_SIZE_BYTES && !l->results_area_aliased;
 }
 
 const flash_layout_t *flash_layout(void) {

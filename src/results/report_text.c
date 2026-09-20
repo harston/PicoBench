@@ -6,6 +6,7 @@
 #include "core/platform.h"
 #include "core/sequencer.h"
 #include "core/timing.h"
+#include "detect/board.h"
 #include "pico/version.h"
 #include "picobench_version.h"
 #include "results/record.h"
@@ -59,6 +60,8 @@ static void write_header(sink_t *o) {
     sink_printf(o, "Platform    : %s  (Pico SDK %s)\n", PICOBENCH_PLATFORM, PICO_SDK_VERSION_STRING);
     sink_printf(o, "Chip        : %s rev %u  (CHIP_ID 0x%08lx), running on %s\n", platform_chip_name(),
                 platform_chip_revision(), (unsigned long)platform_chip_id_raw(), platform_arch_name());
+    const board_profile_t *b = board_profile();
+    sink_printf(o, "Board       : %s (inferred: %s) - details in HARDWARE.TXT\n", b->name, b->basis);
     sink_printf(o, "Cycle timer : %s, read overhead %lu cycles (subtracted)\n", TIMING_COUNTER_NAME,
                 (unsigned long)timing_overhead());
     sink_printf(o, "Run         : nonce %08lx, %lu/%lu stages, %lu records, %lu/%lu bytes, %lu crash(es)\n",
@@ -197,7 +200,7 @@ static void write_verdicts(sink_t *o) {
     for (unsigned i = 0; i < SUBSYS_COUNT; i++) {
         const subsys_summary_t *s = &sum.sub[i];
         sink_printf(o, "  %-10s %-8s pass %u  fail %u  crashed %u  skipped %u  n/a %u  errors %lu\n",
-                    subsys_name((subsys_t)i), summary_verdict(s), s->pass, s->fail, s->crashed,
+                    subsys_name((subsys_t)i), summary_verdict((subsys_t)i, s), s->pass, s->fail, s->crashed,
                     s->skipped, s->na, (unsigned long)s->errors);
     }
     sink_printf(o, "  crash records: %lu%s\n", (unsigned long)sum.crash_records,

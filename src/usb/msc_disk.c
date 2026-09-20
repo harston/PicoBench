@@ -100,6 +100,7 @@ static const char s_readme[] =
     "This disk shows the benchmark reports stored in the board's flash.\r\n"
     "\r\n"
     "  REPORT.TXT    human-readable report of the latest run\r\n"
+    "  HARDWARE.TXT  detected hardware: chip, flash, PSRAM, clocks, board, memory\r\n"
     "  RESULTS.CSV   every measurement, one row per record (Excel, Python)\r\n"
     "  ERRORS.TXT    crashes, failed tests and memory errors of the latest run\r\n"
     "  STATUS.TXT    what the current boot did (tests run? report saved?)\r\n"

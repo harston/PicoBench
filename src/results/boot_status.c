@@ -64,6 +64,11 @@ const char *boot_status_render(uint32_t *len) {
         platform_arch_name());
     add("Flash        : %lu KB%s, JEDEC %02x %02x %02x\r\n", (unsigned long)(l->flash_size / 1024),
         l->size_detected ? "" : " (NOT detected - fallback)", l->jedec[0], l->jedec[1], l->jedec[2]);
+    if (l->alias_size)
+        add("               WARNING: chip claims %lu KB but address wrap shows %lu KB\r\n",
+            (unsigned long)(l->jedec_size / 1024), (unsigned long)(l->alias_size / 1024));
+    if (l->results_area_aliased)
+        add("               WARNING: results area aliases the firmware - saving disabled\r\n");
     add("Results area : %lu KB at 0x%06lx%s\r\n", (unsigned long)(l->results_size / 1024),
         (unsigned long)l->results_base, l->valid ? "" : "  INVALID - results cannot be saved");
     add("This boot    : %s\r\n", actions[s_action]);

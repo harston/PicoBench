@@ -3,9 +3,13 @@
  *
  *   BOOTSEL (all boards): read through the QSPI chip-select pad. This briefly takes
  *     the flash off the bus, so the read runs from RAM with IRQs off (~10 us).
- *   KEY on GPIO23 (RP2350B only, WeAct board): polarity-agnostic - "pressed" means the
- *     level differs from the one sampled at boot. Not used on RP2350A/RP2040, where
- *     GPIO23 is the Pico's SMPS mode pin.
+ *   KEY on GPIO23 (RP2350B only, WeAct board): input with pull-up, active low (button
+ *     to GND). Not used on RP2350A/RP2040, where GPIO23 is the Pico's SMPS mode pin.
+ *     If it reads low for seconds after boot it is not a button here and is ignored.
+ *
+ * A button that is already down at boot must be released before it counts as a press:
+ * the press that requested a re-run is usually still held while the board reboots, and
+ * without this one long press produced two runs.
  *
  * Note: BOOTSEL held at power-up enters the ROM bootloader, so it only works as a
  * PicoBench button after boot.
@@ -17,6 +21,11 @@
 #include <stdbool.h>
 
 void button_init(void);
+
+// True only for a press that started after the previous one was released.
 bool button_pressed(void);
+
+bool button_key_available(void);
+const char *button_key_state(void);   // for HARDWARE.TXT
 
 #endif

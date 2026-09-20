@@ -27,6 +27,7 @@ typedef struct {
 void summary_compute(run_summary_t *out);
 
 // "PASS", "FAIL", "N/A" (nothing applicable), "NOT RUN" (no tests in this subsystem yet).
-const char *summary_verdict(const subsys_summary_t *s);
+// PSRAM reports "NOT PRESENT" instead of "N/A".
+const char *summary_verdict(subsys_t subsys, const subsys_summary_t *s);
 
 #endif

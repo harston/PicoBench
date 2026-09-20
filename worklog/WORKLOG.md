@@ -4,6 +4,71 @@ Newest entry first. Each entry: what was done, decisions, hardware results, open
 
 ---
 
+## 2026-09-20 — Fix: one button press produced two runs
+
+**Report (user, WeAct RP2350B)**
+- Every scan added two RUNxxxx directories instead of one.
+
+**Cause**
+- `button_init()` sampled the KEY idle level at boot to stay polarity-agnostic. The re-run press is normally still held while the board reboots, so the "pressed" level was recorded as idle; releasing the key then looked like a new press and triggered a second run 1 s later. The next boot sampled the correct idle level, which is why it was exactly two runs. A long BOOTSEL press had the same effect (hold 1 s -> reboot -> still held -> counted again).
+
+**Fix**
+- `button_pressed()` now requires a release before a press counts (`s_armed`), so a button held at boot is ignored until let go.
+- KEY GPIO23 is handled as a normal active-low button with pull-up (the user's earlier test confirmed KEY triggers a re-run, which matches that wiring), instead of guessing polarity at boot. If the pin stays low for 3 s after boot it is treated as not-a-button and ignored, so an unknown board cannot loop.
+- HARDWARE.TXT gains `key_button` (live state) and `rerun_trigger`.
+
+**Next step**
+- User re-tests: one press = exactly one new RUNxxxx.
+
+---
+
+## 2026-09-19 — Phase 3: hardware inventory + HARDWARE.TXT
+
+**Done**
+- Commit `4316ed3`: phase 2 (verified on WeAct: RUN0001 on the disk, run-once logic, STATUS.TXT).
+- New test flag `TF_INVENTORY`. Inventory stages run first, at the default clock; each records facts only.
+  - `core.chip` (110): CHIP_ID fields, silicon (RP2040-Bx / RP2350-Ax), package + "48 GPIO confirmed", SRAM size and banks, DMA/PIO counts, RP2350 gitref, ROM sys_info (chip info words, OTP critical flags, CPU arch), running core.
+  - `core.firmware` (111): version, build ID/time, platform, SDK, gcc, boot ROM version, RP2350 boot info words.
+  - `core.ids` (112): unique ID (RP2350 from OTP; RP2040 = flash UID).
+  - `core.board` (113): inferred profile (`src/detect/board.[ch]`) from chip + flash size: WeAct RP2350B / Pico 2 / Pico / large-flash RP2040 / unknown. Includes the LED, KEY and PSRAM CS hint.
+  - `core.memory` (114): firmware size vs 1 MB limit, .data/.bss, heap, both stacks, arena, flash layout. FAIL if the layout is invalid.
+  - `core.reset` (115): decoded chip reset reasons (RP2040 vreg_and_chip_reset, RP2350 powman) + watchdog reason.
+  - `core.environment` (116): internal temperature (64-sample average, 3.3 V ref assumed), VREG vsel → mV, VSYS via the GPIO29 /3 divider (not on RP2350B).
+  - `clocks.sources` (102): XOSC nominal/measured, ROSC and LPOSC measured, source mux names for every clock, both PLLs, operating points.
+  - `flash.identify` (400): JEDEC + vendor table, SFDP (header, BFPT, density, cross-check with JEDEC → FAIL on mismatch), SR1-3 (QE, block protect), flash unique ID.
+  - `flash.interface` (401): RP2040 SSI (divider, SCK, RX sample delay, frame format, XIP cmd, wait cycles) / RP2350 QMI M0+M1 (timing fields, SCK, read format decode, ATRANS) + XIP cache state.
+  - `psram.detect` (500, RP2350, TF_RISKY): probes XIP_CS1 GPIOs in order board hint (WeAct GPIO0) → 0/8/19/47 (47 only on B), with raw MFID/KGD/EID per probe. On success: SDK default init (133 MHz / 8 µs / 18 ns) + first/last word sanity via the uncached alias 0x15000000. Returns N/A when absent.
+  - `usb.config` (910).
+- HARDWARE.TXT writer (`src/results/report_hardware.c`), added to the stored files and README.
+- REPORT.TXT header: board line. Verdict: PSRAM shows "NOT PRESENT" instead of N/A.
+- Sizes: text 79-99 KB, bss RP2040 77 KB / RP2350 150 KB.
+
+**Flash size safety (user question: clones may have up to 16 MB)**
+- Size detection is read-only: JEDEC 0x9F and SFDP 0x5A, cross-checked against each other. Nothing is written or erased outside the results area (and the 64 KB scratch in phase 5); the firmware area is never touched.
+- Real risk found: counterfeit/mislabelled chips (common on clones) claim more than they have, and their addresses wrap. A results area at 12 MB on a chip that is really 2 MB would erase the firmware at offset 0.
+- Added an address-wrap probe (read-only): compare 256 bytes at offset 0 with each power-of-two offset from 256 KB up to the claimed size. A match means the chip is that small, and the smaller size is used for the layout. Plus a final check of the results area itself: if it aliases the firmware, `flash_layout()->valid` is false and saving is disabled instead of destroying the firmware.
+- Reported in HARDWARE.TXT (`address_wrap`, `size_used`, FAIL on overstatement) and as a warning in STATUS.TXT.
+- False positive is possible if identical 256-byte content really exists at a power-of-two offset; the effect is only a smaller usable area, and it is visible in the report.
+- PSRAM size comes from the EID (SDK mapping) plus the first/last word sanity check. PSRAM holds nothing persistent, so probing it cannot lose data; phase 6 will add a wrap check there too.
+
+**Hardware verification (WeAct RP2350B, ARM, RUN0010 - full flash contents from the user)**
+- OVERALL PASS, 23 stages, 179 records, 10 KB of 64 KB arena. Verdicts: CORE/CLOCKS/CPU/FLASH/USB PASS, PSRAM NOT PRESENT.
+- Chip: RP2350B, CHIP_ID 0x30004927, silicon **RP2350-A3**, bootrom version 4, PACKAGE_SEL=0 (QFN80, 48 GPIO), gitref 0x5a09d5a2, OTP critical flags 0 (no secure boot), ROM says Arm.
+- ROM CHIP_INFO words 2/3 are the two halves of the unique ID (C79516F9DD83F1F2), so they are device ID / wafer ID - labels fixed accordingly.
+- Flash: JEDEC `20 40 18` = XMC/Micron class, 16 MB; SFDP rev 1.6, 3 parameter headers, BFPT 16 dwords at 0x30, density matches JEDEC; address-wrap probe clean up to 16 MB; SR2 QE=1 (quad enabled), no block protection; flash UID 1f1c0f1a1023e742.
+- QMI: CLKDIV 3 -> **SCK 50 MHz at 150 MHz clk_sys**, read cmd 0xEB with 1-4-4 widths, 16 dummy bits + mode byte, RX delay 2, cooldown 1, pagebreak 2, min_deselect 7. ATRANS: 4 MB windows, identity. XIP cache enabled (secure and non-secure).
+- PSRAM: all four candidate pins answer 00/00/00 -> NOT PRESENT, as expected before soldering.
+- Clocks: XOSC 12 MHz exact, ROSC 45.4 MHz, LPOSC 31 kHz, clk_peri/usb/adc all 48 MHz from pll_usb, clk_hstx 150 MHz. PLL_SYS 1500 MHz VCO /5/2, PLL_USB 1200 MHz /5/5.
+- Environment: 31.3 degC, VREG vsel 11 = 1.10 V.
+- Reset: chip_reset 0x40000 = HAD_RUN_LOW ("RUN pin") with watchdog_reason 0x1, i.e. the re-run's watchdog reboot appears as a chip-level RUN reset on RP2350. A note now says so.
+- Fixed after review: core1 stack printed as an empty range (pico_multicore not linked yet -> now says so); QMI M1 labelled "PSRAM (CS1)" even with no PSRAM (now "unused, boot defaults").
+
+**Follow-up on the button fix**
+- HARDWARE.TXT showed `key_button: reads low (pressed)`, recorded while the KEY was still held from the re-run request. If GPIO23 turned out to idle low on this board, the first version of the fix would have blocked BOOTSEL too (a single shared "armed" flag). Buttons are now armed independently, and an idle-low KEY is only reported, never acted on., A-rev, XMC flash 16 MB with SFDP matching, QMI decode, PSRAM NOT PRESENT (probe GPIO0: FF/00 bytes), board = WeAct.
+- Pico 2 and RP2040: first run of phases 2-3 on these boards (flash writes via SSI on RP2040!).
+
+---
+
 ## 2026-09-19 — Phase 2 fix: reports were never saved; writable disk
 
 **Hardware report (user, WeAct RP2350B, ARM)**

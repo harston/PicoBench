@@ -32,9 +32,9 @@ void summary_compute(run_summary_t *out) {
     out->overall_pass = pass;
 }
 
-const char *summary_verdict(const subsys_summary_t *s) {
+const char *summary_verdict(subsys_t subsys, const subsys_summary_t *s) {
     if (s->fail || s->crashed || s->skipped) return "FAIL";
     if (s->pass) return "PASS";
-    if (s->na) return "N/A";
+    if (s->na) return subsys == SUBSYS_PSRAM ? "NOT PRESENT" : "N/A";
     return "NOT RUN";
 }

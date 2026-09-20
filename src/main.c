@@ -47,6 +47,7 @@ bi_decl(bi_program_feature("Platform " PICOBENCH_PLATFORM));
 // Files stored with every run, in this order.
 static const store_file_spec_t s_run_files[] = {
     {"REPORT.TXT", report_text_write},
+    {"HARDWARE.TXT", report_hardware_write},
     {"RESULTS.CSV", report_csv_write},
     {"ERRORS.TXT", report_errors_write},
 };

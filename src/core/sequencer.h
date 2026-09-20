@@ -47,6 +47,7 @@ typedef enum {
 // Test flags.
 #define TF_SWEEP  0x1u   // also run at every non-default operating point
 #define TF_RISKY  0x2u   // may hang or reset (changes QMI timing, writes flash, ...)
+#define TF_INVENTORY 0x4u // identifies hardware/conditions; rendered into HARDWARE.TXT
 
 typedef struct test_ctx test_ctx_t;
 

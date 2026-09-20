@@ -13,6 +13,14 @@
  *   flash_size
  *
  * Results area size: 512 KB (2 MB flash), 1 MB (4 MB), 2 MB (8 MB), 4 MB (>= 16 MB).
+ *
+ * Size detection is READ-ONLY (JEDEC 0x9F, SFDP 0x5A) - it never writes or erases.
+ * Counterfeit or mislabelled chips (common on clones) may claim more than they have;
+ * their address lines then wrap, so an area placed near the "end" would in fact
+ * overwrite the firmware at offset 0. An address-wrap probe compares the bytes at
+ * offset 0 with the bytes at each power-of-two offset: if they are identical, the chip
+ * is that small, and the smaller size is used. As a last line of defence the results
+ * area itself is checked the same way and writing is disabled if it aliases.
  */
 
 #ifndef PICOBENCH_FLASH_LAYOUT_H
@@ -25,8 +33,11 @@
 #define FLASH_SCRATCH_BYTES      (64u * 1024u)
 
 typedef struct {
-    uint32_t flash_size;        // detected (or fallback) size in bytes
+    uint32_t flash_size;        // size actually used (JEDEC, reduced if address wrap found)
+    uint32_t jedec_size;        // size claimed by the JEDEC capacity byte
+    uint32_t alias_size;        // size proven by the address-wrap probe (0 = no wrap seen)
     bool size_detected;         // false: JEDEC capacity unusable, fallback used
+    bool results_area_aliased;  // results area maps onto the firmware: NEVER write
     uint8_t jedec[3];           // manufacturer, memory type, capacity
     uint32_t fw_end;            // end of the firmware image (offset)
     uint32_t scratch_base;      // offsets from the start of flash

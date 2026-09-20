@@ -171,6 +171,9 @@ test_result_t test_flash_interface(test_ctx_t *ctx) {
                  (unsigned long)FIELD(t, QMI_M0_TIMING_PAGEBREAK), (unsigned long)FIELD(t, QMI_M0_TIMING_SELECT_SETUP),
                  (unsigned long)FIELD(t, QMI_M0_TIMING_SELECT_HOLD), (unsigned long)FIELD(t, QMI_M0_TIMING_MAX_SELECT),
                  (unsigned long)FIELD(t, QMI_M0_TIMING_MIN_DESELECT));
+        snprintf(key, sizeof(key), "m%d_xip_mode", m);
+        uint32_t dw = FIELD(f, QMI_M0_RFMT_DATA_WIDTH);
+        rec_text(ctx, key, "%s", dw == 2 ? "quad (1-4-4)" : dw == 1 ? "dual (1-2-2)" : "single (1-1-1)");
         snprintf(key, sizeof(key), "m%d_read_format", m);
         rec_text(ctx, key, "cmd 0x%02lx%s, widths prefix/addr/suffix/dummy/data = %s/%s/%s/%s/%s, dummy %lu bits%s%s",
                  (unsigned long)FIELD(c, QMI_M0_RCMD_PREFIX), FIELD(f, QMI_M0_RFMT_PREFIX_LEN) ? "" : " (no prefix)",

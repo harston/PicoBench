@@ -4,6 +4,23 @@ Newest entry first. Each entry: what was done, decisions, hardware results, open
 
 ---
 
+## 2026-09-20 — Second board: Pico 2 clone (RP2350A), findings and fixes
+
+**Hardware (user, /Volumes/Public/PicoBench/result2, RUN0001, OVERALL PASS)**
+- Chip: **RP2350-A2** (CHIP_ID 0x20004927, PACKAGE_SEL=1 -> QFN60/30 GPIO), **boot ROM version 2** - older silicon than the WeAct (A3, ROM 4). Same gitref 0x5a09d5a2.
+- Flash: **Boya BY25Q128, 16 MB** (JEDEC `68 40 18`), SFDP rev 1.0, 2 parameter headers, BFPT 9 dwords; density matches; no address wrap.
+- **The boot ROM set up XIP in DUAL mode on this board**: read command 0xBB, widths 1-2-2, 0 dummy bits, and **SR2 QE = 0** (quad not enabled). The WeAct (XMC) runs quad: 0xEB, 1-4-4, 16 dummy bits. Same CLKDIV 3 = 50 MHz SCK, so this board's XIP read bandwidth is roughly half. This matters for the cartridge hot path and will show up in the phase 5 flash benchmarks - keep both boards in the comparison.
+- PSRAM: correctly probed only GPIO 0/8/19 (no GPIO47 on the A package), all silent -> NOT PRESENT.
+
+**Bugs found and fixed**
+- **Temperature read 411 degC (ADC raw 55).** The firmware is compiled for RP2350B, where the temperature sensor is ADC channel 8; on RP2350A it is channel 4, so the compiled `ADC_TEMPERATURE_CHANNEL_NUM` read a non-existent channel. The channel is now chosen from the chip detected at runtime, the channel number is recorded, and an implausible value (outside -40..125 degC) is reported as an error instead of a nonsense number. Other compile-time RP2350B assumptions must be treated the same way - phase 7 GPIO tests must use the runtime GPIO count.
+- Board profile said "unknown RP2350A board" for a clone with 16 MB. Now "Pico 2 compatible board / clone (RP2350A)"; the RP2350B fallback keeps the KEY/PSRAM hints.
+- `flash.interface` now states the XIP mode explicitly (`quad (1-4-4)` / `dual (1-2-2)` / single), so a dual-mode board is obvious at a glance.
+- `PICO_RP2350_A2_SUPPORTED=1` is now set: A2 silicon is in the field, and the SDK uses this for the E14 (QMI/PSRAM) workaround. A2 also gets an errata note in HARDWARE.TXT.
+- False alarm: `core.ids` looked empty in my first look at the file; the record is present (my sed range was wrong).
+
+---
+
 ## 2026-09-20 — Fix: one button press produced two runs
 
 **Report (user, WeAct RP2350B)**

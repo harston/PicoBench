@@ -100,6 +100,10 @@ target_include_directories(picobench PRIVATE
 
 target_compile_options(picobench PRIVATE -Wall -Wextra -Wno-unused-parameter)
 
+# Boards with RP2350-A2 silicon exist in the field (seen on a Pico 2 clone), so keep the
+# SDK's A2 errata workarounds (notably E14 in the PSRAM setup) enabled.
+target_compile_definitions(picobench PRIVATE PICO_RP2350_A2_SUPPORTED=1)
+
 target_link_libraries(picobench
     pico_stdlib
     pico_rand

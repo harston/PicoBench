@@ -185,8 +185,14 @@ gets flashed to hardware.
 
 ### Board facts learned on hardware
 
-- WeAct RP2350B: the flash JEDEC ID is `20 40 18` (XMC XM25QH128 class, manufacturer 0x20),
-  not Winbond as the WeAct docs say. 16 MB.
+- WeAct RP2350B: RP2350-A3 silicon, boot ROM 4. Flash JEDEC `20 40 18` (XMC XM25QH128
+  class), 16 MB, not Winbond as WeAct's docs say. XIP quad 1-4-4 (0xEB), SCK 50 MHz.
+- Pico 2 clone: **RP2350-A2** silicon, boot ROM 2, Boya BY25Q128 16 MB (`68 40 18`), and
+  the boot ROM leaves XIP in **dual** mode (0xBB, 1-2-2, QE bit not set) - about half the
+  flash read bandwidth of the WeAct. Keep both boards in benchmark comparisons.
+- **The RP2350 build targets the B package**, so anything indexed by chip variant must be
+  resolved at runtime: the temperature sensor is ADC channel 8 on B but 4 on A (a
+  compile-time constant gave "411 degC" on the clone), and GPIO 30-47 do not exist on A.
 
 ### Adding a test
 

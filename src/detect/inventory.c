@@ -51,7 +51,11 @@ test_result_t test_inv_chip(test_ctx_t *ctx) {
     rec_value(ctx, "dma_channels", UNIT_COUNT, 12);
     rec_value(ctx, "pio_blocks", UNIT_COUNT, 2);
 #else
-    rec_text(ctx, "silicon", "RP2350-A%u", rp2350_chip_version());
+    uint8_t rev = rp2350_chip_version();
+    rec_text(ctx, "silicon", "RP2350-A%u", rev);
+    if (rev <= 2)
+        rec_text(ctx, "errata_note", "RP2350-A2: errata E9 (GPIO input) and E14 (QMI/PSRAM) apply; "
+                 "the SDK workarounds are enabled (PICO_RP2350_A2_SUPPORTED)");
     bool b = platform_chip() == CHIP_RP2350B;
     rec_text(ctx, "package", "%s (PACKAGE_SEL=%lu)", b ? "QFN80, 48 GPIO" : "QFN60, 30 GPIO",
              (unsigned long)sysinfo_hw->package_sel);
@@ -198,6 +202,18 @@ test_result_t test_inv_reset(test_ctx_t *ctx) {
 
 // ---- core.environment ------------------------------------------------------------------
 
+// The temperature sensor is the last ADC channel of the chip: 4 on RP2040 and on
+// RP2350A, 8 on RP2350B. The build targets RP2350B, so on an RP2350A chip the compiled
+// ADC_TEMPERATURE_CHANNEL_NUM (8) does not exist and reads garbage - pick it at runtime.
+// (Seen on an RP2350A board: raw 55 -> "411 degC".)
+static unsigned temp_channel(void) {
+#if PICO_RP2040
+    return ADC_TEMPERATURE_CHANNEL_NUM;
+#else
+    return platform_chip() == CHIP_RP2350B ? 8u : 4u;
+#endif
+}
+
 // Average of 64 conversions; 12-bit, VREF assumed 3.3 V (no external reference).
 static uint32_t adc_avg(unsigned input) {
     adc_select_input(input);
@@ -218,13 +234,19 @@ static uint32_t vreg_mv(unsigned vsel) {
 test_result_t test_inv_environment(test_ctx_t *ctx) {
     adc_init();
     adc_set_temp_sensor_enabled(true);
-    uint32_t raw = adc_avg(ADC_TEMPERATURE_CHANNEL_NUM);
+    uint32_t raw = adc_avg(temp_channel());
     // Datasheet formula: T = 27 - (V - 0.706) / 0.001721, V = raw * 3.3 / 4096.
     int32_t uv = (int32_t)((uint64_t)raw * 3300000u / 4096u);
     int32_t mdeg = 27000 - (uv - 706000) * 1000 / 1721;
     rec_value(ctx, "temperature", UNIT_MILLI_C, mdeg);
     rec_value(ctx, "temp_adc_raw", UNIT_COUNT, raw);
-    rec_text(ctx, "temperature_note", "internal sensor, 3.3 V reference assumed: +-several degC");
+    rec_value(ctx, "temp_adc_channel", UNIT_COUNT, temp_channel());
+    if (mdeg < -40000 || mdeg > 125000) {
+        rec_text(ctx, "temperature_note", "IMPLAUSIBLE - the sensor did not answer on this channel");
+        rec_error(ctx, "temperature_range", temp_channel(), 27000, (uint32_t)mdeg);
+    } else {
+        rec_text(ctx, "temperature_note", "internal sensor, 3.3 V reference assumed: +-several degC");
+    }
     adc_set_temp_sensor_enabled(false);
 
     unsigned vsel = (unsigned)vreg_get_voltage();

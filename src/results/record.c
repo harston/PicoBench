@@ -9,10 +9,12 @@
 #include "picobench_version.h"
 #include "results/crc32.h"
 
+// Sized for a full run: phase 4 alone produces several hundred records, and the
+// sweeps multiply the ones flagged TF_SWEEP by the number of operating points.
 #if PICO_RP2040
-#define ARENA_BYTES (24 * 1024)
+#define ARENA_BYTES (48 * 1024)
 #else
-#define ARENA_BYTES (64 * 1024)
+#define ARENA_BYTES (96 * 1024)
 #endif
 
 #define ARENA_MAGIC 0x50424152u   // "PBAR"

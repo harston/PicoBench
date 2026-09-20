@@ -81,8 +81,11 @@ add_executable(picobench
     src/detect/psram_detect.c
     src/storage/flash_layout.c
     src/storage/results_store.c
+    src/tests/cpu.c
     src/tests/registry.c
     src/tests/selftest.c
+    src/tests/sram_bench.c
+    src/tests/sram_integrity.c
     src/usb/console.c
     src/usb/msc_disk.c
     src/usb/usb_descriptors.c
@@ -110,6 +113,7 @@ target_link_libraries(picobench
     hardware_pwm
     hardware_adc
     hardware_clocks
+    hardware_dma
     hardware_flash
     hardware_pll
     pico_unique_id

@@ -4,6 +4,63 @@ Newest entry first. Each entry: what was done, decisions, hardware results, open
 
 ---
 
+## 2026-09-20 — Phase 4: CPU and SRAM measurements
+
+**Done**
+- `src/core/bench.[ch]`: the free heap region (nothing in this firmware allocates) is the working area for memory tests - RP2040 ~150 KB, RP2350 ~330 KB. Helpers for bank groups (RP2040: SRAM0-3; RP2350: SRAM0-3 and SRAM4-7), a deterministic xorshift PRNG, and the rule that measurement loops live in SRAM.
+- `src/tests/cpu.c` (201-205): per-operation cost of add/and-or/shift/mul/udiv/sdiv against an empty loop of the same shape, reported in milli-cycles per op; predictable vs data-dependent branches; memcpy/memset/32-bit copy loop for 64 B to 16 KB with kB/s; software CRC-32; random and sequential lookups in 4/16/64 KB tables (the shape of the cartridge decode).
+- `src/tests/sram_integrity.c` (300): constants 00/FF/55/AA, walking ones and zeros, address and inverted address, LFSR, byte and halfword passes, and March C- over every free byte of each bank group. Errors are recorded with address, expected and actual.
+- `src/tests/sram_bench.c` (301-310): 8/16/32-bit sequential read/write per bank group (plus reverse and, on Cortex-M33 only, misaligned 32-bit); stride sweep 4..256 bytes to expose bank conflicts; dependent-load latency (pointer chase) for 4 KB to 256 KB; CPU loop with a DMA stream in the same and in the other bank group.
+- Record arena enlarged (RP2040 48 KB, RP2350 96 KB): a full run with sweeps is now several hundred records.
+- Registry: 26 tests, 5 of them swept over all five operating points -> 45 stages.
+
+**Design notes**
+- Unaligned 32-bit access is measured only on Cortex-M33; it faults on Cortex-M0+ and is not supported by Hazard3, so those builds record why instead.
+- The pointer chase uses Sattolo's algorithm, which builds a single cycle over all entries directly in "next index" form. A Fisher-Yates permutation converted in place would have corrupted itself.
+- Continuous DMA traffic uses one channel with an address ring (4 KB) and a fixed opposite address. A self-chaining pair of channels would restart with already-advanced addresses and walk out of the buffer.
+- Scratch banks are not tested: they hold the stacks. Testing them needs the stack moved first (later phase).
+
+**Hardware verification (WeAct RP2350B, RUN0011) - found three benchmark bugs**
+- The run completed 45/45 stages with 498 records and **5 watchdog crashes, all in `sram.throughput`** (one per operating point). Crash recovery worked every time and the earlier results survived, which is a good end-to-end proof of the phase 1 design.
+- **`sram.integrity`: 0 errors** over 70 KB in SRAM0-3 plus 256 KB in SRAM4-7 (const_00 pass: 1.4 ms and 5.2 ms).
+- Valid numbers from that run (writes were not affected by the bug): write32 340 MB/s, write8 200 MB/s in group 0; group 1 write32 109 MB/s (that measurement was taken at 48 MHz, so it scales); memcpy 4 KB 168 MB/s, memset 16 KB 298 MB/s.
+
+**Bugs found and fixed (verified in the disassembly)**
+1. **Hang**: the misaligned test used a plain `uint32_t *` at an odd address. At -O3 the compiler emitted `LDRD`/`LDM`, which require alignment and fault on Cortex-M33 - the watchdog then reset the chip in every sweep. Now read through a `packed` type (single LDR, verified: no ldrd/ldm in the kernel), and only on M33.
+2. **Reads reported 0 cycles**: read-only loops were inlined, proved loop-invariant and hoisted out of the timed region. Now called through a `volatile` function pointer with the arguments passed through a register barrier (verified: `blx` in `sample_access`, 8 `ldr` in `read32`). This also invalidated the DMA contention result (0 % slowdown, since the baseline was 0).
+3. **Per-operation costs were nonsense** (udiv 0.125 cycles): the repeated expression was merged algebraically, and the constant divisor was strength-reduced to multiply+shift. Now a register fence sits between every operation and the divisor is opaque (verified: 8 adds / 8 muls / 8 udiv / 8 sdiv / 8 ror per iteration, and 8 calls to the SIO divider on RP2040).
+- Also unrolled the stride and pointer-chase loops: with a tight loop the overhead hid the differences (stride 4 and stride 16 measured identically at 7.0 cycles).
+- The lessons are written up in CLAUDE.md under "Measurement pitfalls".
+
+**Hardware verification after the fixes (all three boards, 45/45 stages, 0 crashes, 0 errors)**
+- WeAct RP2350B (RUN0013, 588 records), Pico 2 clone RP2350A (RUN0003, 588), purple RP2040 clone (RUN0001, 450).
+- `sram.integrity`: zero errors on every board.
+
+| measurement (default clock) | RP2350 @150 MHz | RP2040 @125 MHz |
+|---|---|---|
+| read32 sequential | 238.6 MB/s | 142.0 MB/s |
+| write32 sequential | 366.6 MB/s | 188.6 MB/s |
+| read16 / read8 | 119.6 / 53.3 MB/s | 71.2 / 34.4 MB/s |
+| write16 / write8 | 265.2 / 159.4 MB/s | 153.0 / 110.7 MB/s |
+| read32 misaligned | 164.7 MB/s (-31 %) | faults: not measured |
+| dependent load (pointer chase) | 2.26 cycles | 3.52 cycles |
+| add / and-or / shift | 1.00 cycle each | 1.00 cycle each |
+| mul32 | 1.88 cycles | 1.00 cycle |
+| udiv32 / sdiv32 | 4.00 cycles | **33.0 cycles** (SIO divider through a function call) |
+| memcpy 4 KB | see CSV | see CSV |
+
+- **The two RP2350 boards produced identical SRAM and CPU numbers to the last digit** (same core, same clock, no caches in the path) - the A2 clone is not slower than the WeAct anywhere except flash XIP.
+- **Per-op costs are identical at every operating point**, i.e. they scale exactly with the clock, as they should.
+- **RP2040 single-cycle multiply** (M0+ on RP2040 has the fast multiplier) but **division costs 33 cycles** including the call into the SIO divider helper - worth avoiding in the cartridge hot path.
+- Writes are faster than reads on both chips (posted writes vs a stalling load).
+- **Stride 4..256 bytes: no difference at all** (RP2350 2.66 cycles/access, RP2040 5.05). A single CPU issues one load at a time, so bank striping does not help or hurt it. The test now records `bank_conflict_effect_percent` and states this conclusion in the report itself.
+- **DMA contention: 0 % on RP2350, 7 % on RP2040** - but the old test could not prove the DMA was running at all (one channel with an address ring, traffic on one side only). Reworked: an SRAM->SRAM copy is restarted for every sample outside the timed region, and the words actually transferred during the samples are counted and reported (`dma_words_*`), with an error recorded if it is zero. **Needs a re-test to confirm the 0 %.**
+
+**Next**
+- Re-test the contention numbers, then phase 5 (flash/XIP/cache), which should also carry the XIP mode + clock sweep discussed for the dual-mode clone.
+
+---
+
 ## 2026-09-20 — Second board: Pico 2 clone (RP2350A), findings and fixes
 
 **Hardware (user, /Volumes/Public/PicoBench/result2, RUN0001, OVERALL PASS)**

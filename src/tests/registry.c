@@ -40,6 +40,32 @@ const test_desc_t g_tests[] = {
     {200, SUBSYS_CPU, CHIP_ALL, TF_SWEEP, "cpu.loop_smoke",
      "Empty 100-iteration loop from SRAM, IRQs off (scaling smoke test)",
      test_cpu_loop_smoke},
+
+    // ---- CPU ------------------------------------------------------------------------------
+    {201, SUBSYS_CPU, CHIP_ALL, TF_SWEEP, "cpu.integer",
+     "Cost of add/and/shift/mul/udiv/sdiv per operation, from SRAM", test_cpu_integer},
+    {202, SUBSYS_CPU, CHIP_ALL, 0, "cpu.branch",
+     "Predictable versus data-dependent branches", test_cpu_branch},
+    {203, SUBSYS_CPU, CHIP_ALL, 0, "cpu.memory_ops",
+     "memcpy / memset / 32-bit copy loop in SRAM, 64 B to 16 KB", test_cpu_memory_ops},
+    {204, SUBSYS_CPU, CHIP_ALL, 0, "cpu.crc32_sw",
+     "Software CRC-32 over 4 KB of SRAM", test_cpu_crc32},
+    {205, SUBSYS_CPU, CHIP_ALL, 0, "cpu.lut",
+     "Random and sequential lookups in 4/16/64 KB SRAM tables", test_cpu_lut},
+
+    // ---- SRAM -----------------------------------------------------------------------------
+    {300, SUBSYS_SRAM, CHIP_ALL, 0, "sram.integrity",
+     "Patterns, address tests, byte/halfword access and March C- over all free SRAM",
+     test_sram_integrity},
+    {301, SUBSYS_SRAM, CHIP_ALL, TF_SWEEP, "sram.throughput",
+     "8/16/32-bit sequential read and write per bank group", test_sram_throughput},
+    {302, SUBSYS_SRAM, CHIP_ALL, 0, "sram.stride",
+     "Read cost versus access stride (bank conflicts)", test_sram_stride},
+    {303, SUBSYS_SRAM, CHIP_ALL, TF_SWEEP, "sram.latency",
+     "Dependent-load latency, random order, 4 KB to 256 KB", test_sram_latency},
+    {310, SUBSYS_SRAM, CHIP_ALL, 0, "sram.contention_dma",
+     "CPU read loop with a DMA stream in the same and in the other bank group",
+     test_sram_contention_dma},
 #ifdef PICOBENCH_TEST_CRASH
     {990, SUBSYS_CORE, CHIP_ALL, TF_RISKY, "debug.crash",
      "Hangs on purpose to exercise watchdog recovery (debug builds only)",

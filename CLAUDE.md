@@ -208,6 +208,27 @@ gets flashed to hardware.
 4. Measurement loops: IRQs off (`save_and_disable_interrupts`), code under test in
    SRAM (`__not_in_flash_func`) unless XIP is what's being measured,
    `timing_now()`/`timing_net()` around the work.
+
+### Measurement pitfalls (all three cost a wrong result on hardware in phase 4)
+
+At `-O3` the compiler will happily destroy a benchmark. After writing a kernel,
+**check the disassembly** (`build/<platform>/picobench.dis`) and count the instructions:
+
+- **A pure loop is hoisted out of the timed region.** A read-only loop called through a
+  known function pointer gets inlined, proved loop-invariant and moved out - the test
+  then reports *0 cycles*. Call the kernel through a `volatile` function pointer and
+  pass its arguments through `__asm volatile("" : "+r"(x))`.
+- **Repeated operations are merged algebraically.** Eight `a = a * b` become one
+  multiply by `b^8`, eight adds become `a + 8b`. Put a register fence
+  (`__asm volatile("" : "+r"(a))`, no instruction emitted) between every operation.
+- **A constant divisor is not a division.** `a / 0x9E3779B9` becomes multiply+shift.
+  Fence the divisor so its value is unknown to the compiler.
+- **Unaligned access must use a packed type.** A plain `uint32_t *` at an odd address
+  lets the compiler emit `LDRD`/`LDM`, which fault even on Cortex-M33 (this hung
+  `sram.throughput` on every operating point). Only M33 may do unaligned word loads at
+  all; M0+ and Hazard3 record why instead.
+- Unrolling matters for anything measured per access: with a tight loop the loop
+  overhead hid the difference between access strides entirely.
 5. A test running longer than ~4 s must call `guard_keepalive()` (watchdog is 5 s).
 6. Returning `TR_PASS` with `ctx->errors > 0` is turned into `TR_FAIL` automatically.
 

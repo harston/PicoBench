@@ -1,8 +1,18 @@
 # PicoBench comparison
 
-- **RP2040 purple clone**: RP2040 / Cortex-M0+, build 45be2df1, operating points [48, 96, 120, 125, 133] MHz
+- **RP2040 purple clone**: RP2040 / Cortex-M0+, build efdf54f0, operating points [48, 96, 120, 125, 133] MHz
 - **RP2350A clone**: RP2350A / Cortex-M33, build 921a4fd8, operating points [48, 96, 120, 133, 150] MHz
 - **WeAct RP2350B + PSRAM**: RP2350B / Cortex-M33, build 921a4fd8, operating points [48, 96, 120, 133, 150] MHz
+
+### Cartridge hot path - RP2040 purple clone at 133 MHz
+
+| variant | p50 [cyc] | p99.9 [cyc] | max [cyc] | p50 [ns] | max [ns] |
+|---|---|---|---|---|---|
+| table in SRAM, code in SRAM | 33 | 40 | 40 | 248.1 | 300.8 |
+| table in SRAM, code in flash | 33 | 40 | 743 | 248.1 | 5586.5 |
+| table in flash, cache warm | 33 | 84 | 91 | 248.1 | 684.2 |
+| table in flash, cache cold | 84 | 90 | 90 | 631.6 | 676.7 |
+| table in flash, uncached | 82 | 88 | 88 | 616.5 | 661.7 |
 
 ### Cartridge hot path - RP2350A clone at 150 MHz
 
@@ -25,6 +35,16 @@
 | table in flash, uncached | 98 | 99 | 99 | 653.3 | 660.0 |
 | table in PSRAM, cached | 20 | 88 | 88 | 133.3 | 586.7 |
 | table in PSRAM, uncached | 59 | 60 | 60 | 393.3 | 400.0 |
+
+### Hot path against clk_sys - RP2040 purple clone (cycles / ns)
+
+| variant | 48 MHz | 96 MHz | 120 MHz | 125 MHz | 133 MHz |
+|---|---|---|---|---|---|
+| table in SRAM, code in SRAM | 33 / 688 | 33 / 344 | 33 / 275 | 33 / 264 | 33 / 248 |
+| table in SRAM, code in flash | 33 / 688 | 33 / 344 | 33 / 275 | 33 / 264 | 33 / 248 |
+| table in flash, cache warm | 33 / 688 | 33 / 344 | 33 / 275 | 33 / 264 | 33 / 248 |
+| table in flash, cache cold | 84 / 1750 | 84 / 875 | 84 / 700 | 84 / 672 | 84 / 632 |
+| table in flash, uncached | 82 / 1708 | 82 / 854 | 82 / 683 | 82 / 656 | 82 / 617 |
 
 ### Hot path against clk_sys - RP2350A clone (cycles / ns)
 
@@ -105,6 +125,16 @@
 | PSRAM read uncached | 13.8 | 28.1 | 21.8 | 24.1 | 27.3 |
 | PSRAM write uncached | 17.9 | 36.1 | 26.9 | 29.8 | 33.7 |
 | PSRAM read cached (4 KB) | 80.3 | 160.6 | 200.8 | 222.5 | 251.0 |
+
+### Hot path under load - RP2040 purple clone at 125 MHz
+
+| variant | p50 [cyc] | p99 [cyc] | p99.9 [cyc] | max [cyc] | max [ns] |
+|---|---|---|---|---|---|
+| SRAM table, quiet | 33 | 33 | 40 | 40 | 320.0 |
+| SRAM table, 10 kHz interrupt | 33 | 33 | 328 | 335 | 2680.0 |
+| SRAM table, SRAM DMA | 33 | 34 | 41 | 42 | 336.0 |
+| flash table, quiet | 33 | 83 | 84 | 90 | 720.0 |
+| flash table, SRAM DMA | 33 | 34 | 83 | 85 | 680.0 |
 
 ### Hot path under load - RP2350A clone at 150 MHz
 

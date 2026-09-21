@@ -63,6 +63,15 @@ def ops_of(rows):
     return sorted({int(k[2]) for k in rows if k[2].isdigit()})
 
 
+def default_op(rows):
+    """The operating point the whole suite ran at (the swept ones carry fewer tests)."""
+    per_op = {}
+    for test, _label, op, _record in rows:
+        if op.isdigit():
+            per_op.setdefault(int(op), set()).add(test)
+    return max(per_op, key=lambda op: len(per_op[op])) if per_op else 0
+
+
 def main():
     boards = {}
     for arg in sys.argv[1:]:
@@ -198,8 +207,7 @@ def main():
         ("flash_table_dma_psram", "flash table, PSRAM DMA"),
     ]
     for label, rows in boards.items():
-        ops = ops_of(rows)
-        top = max(ops) if ops else 0
+        top = default_op(rows)   # this test is not swept: it runs at the default clock
         lines = []
         for v, desc in disturb:
             p50 = stat(rows, "hotpath.disturbance", v, top)

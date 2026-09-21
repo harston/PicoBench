@@ -46,8 +46,25 @@ Newest entry first. Each entry: what was done, decisions, hardware results, open
 - The XIP mode sweep reported "1 cycles for 4 KB" for all twelve combinations: the pure read block was moved out from between the two cycle-counter reads. Same class as the phase 4 bugs; now called through a volatile function pointer with a register barrier (verified in the .dis). The checksums and the restore were fine - all 12 combinations verified correct on the WeAct, and the flash still read correctly afterwards.
 - Result arena enlarged (RP2040 64 KB, RP2350 128 KB): phase 5 already used 81 % of the old RP2040 arena.
 
-**Still to verify**
-- The mode sweep timings after the fix, and the RP2350A clone (dual mode): does it accept quad without the QE bit, and does divider 2 work?
+**RP2350A clone (RUN0004, 59/59 stages, 0 crashes, 0 errors) - the dual-mode question answered**
+- **`EBh quad` is UNUSABLE on this board at every divider**: the checksum differs from the reference every time (0x08885630 / 0xbc430723 / 0x8f55e7d4 vs 0x3b430a63), exactly as expected for a Boya chip whose QE bit is clear. The test detected it by checksum, restored the original mode immediately and finished the run cleanly - the safety design works.
+- Serial and dual modes are usable at every divider including 2 (SCK 75 MHz).
+
+| dual-mode clone vs quad WeAct | WeAct | clone | ratio |
+|---|---|---|---|
+| cold cache miss | 175 cycles | **283 cycles** | 1.62x |
+| per-line miss, streaming | 78.8 | **131 cycles** | 1.66x |
+| XIP streaming read | 11.3 MB/s | **7.4 MB/s** | 1.53x |
+| code from flash, cold | +28 % | **+51 %** | - |
+| erase 4 KB sector | 2214 us | **870 us** | Boya is 2.5x faster |
+| program 256 B page | 511 us | 779 us | - |
+
+- The earlier model predicted 1.55x; measured 1.62x. The "slower" chip is markedly faster at erasing.
+- DMA contention on the clone matches the WeAct exactly: 530374 words, 5 % slowdown.
+- Still pending: the mode-sweep *timings* (the "1 cycle for 4 KB" bug is fixed but that build has not been run yet).
+
+**Decision: PSRAM goes on the WeAct now**
+- Baseline without PSRAM is complete for all three boards, detection already works (phase 3), so phase 6 can be tested as soon as it is written. Recommended part: APS6404L-3SQR (8 MB, KGD 0x5D); CS is GPIO0 on the WeAct, which the board profile already probes first.
 
 ---
 

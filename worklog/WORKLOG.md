@@ -28,8 +28,21 @@ Newest entry first. Each entry: what was done, decisions, hardware results, open
   - copies: SRAM->PSRAM 20.6 (CPU) / 34.5 (DMA) MB/s, PSRAM->SRAM 15.6 / 29.1, PSRAM->PSRAM 6.6 / 8.0.
 - **`qmi.conflict` - the headline result for the cartridge**: with a PSRAM DMA stream running, a flash cold miss goes from **171 to 436 cycles (+154 %)** and flash streaming reads collapse by ~30x; the reverse (flash DMA vs PSRAM reads) costs only 21 %. Cause: `max_select` = 18 means one PSRAM transaction can hold QMI for 1152 clk_sys cycles (~7.7 us at 150 MHz). Written up in CLAUDE.md.
 
+**Re-run after the fix (RUN0017, WeAct with 8 MB APS6404): OVERALL PASS, 68/68 stages, zero errors**
+- `psram.integrity`: 0 errors over the full 8 MB, no address wrap, all 8 one-megabyte regions verified, 4.8 s.
+- `psram_window: restored after the sweep` - the fix works.
+- The XIP mode sweep now reports real timings (the "1 cycle" bug is gone), and they are directly useful:
+
+| flash read mode | 37.5 MHz | 50 MHz | 75 MHz |
+|---|---|---|---|
+| BBh dual | 5.5 MB/s | 7.2 MB/s | 10.2 MB/s |
+| EBh quad | 8.5 MB/s | **11.0 MB/s (current)** | **15.1 MB/s** |
+
+- **Raising the flash divider from 3 to 2 (50 -> 75 MHz SCK) would give ~37 % faster flash reads on this board**, and all twelve combinations passed the checksum verification. Note the verification is one 32 KB checksum plus a 4 KB read per combination - production use would want longer validation and a temperature margin.
+- Dual at 75 MHz (10.2 MB/s) roughly matches quad at 50 MHz (11.0), which is the practical answer for the clone whose QE bit is clear: raising its flash clock recovers most of what dual mode costs.
+
 **Next**
-- Re-run with the fix: `psram.integrity` should pass cleanly. Then phase 7 (cartridge hot path), where this QMI finding directly shapes the variants worth measuring.
+- Phase 7: the cartridge hot path. The QMI finding (a PSRAM transaction can block flash for ~7.7 us) and the flash miss cost (171 cycles quiet, 436 with PSRAM traffic) decide which variants are worth measuring.
 
 ---
 

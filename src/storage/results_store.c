@@ -190,6 +190,22 @@ bool store_delete_runs(const uint32_t *run_nos, unsigned n) {
     return true;
 }
 
+bool store_erase_all(void) {
+    if (!flash_layout()->valid) {
+        s_last_error = "flash layout invalid";
+        return false;
+    }
+    flash_erase_sector(dir_offset(0));
+    flash_erase_sector(dir_offset(1));
+    store_mount();                    // both slots are blank: a fresh, empty store
+    if (s_dir_slot != -1 || s_dir.nruns != 0 || s_dir.next_run_no != 1) {
+        s_last_error = "directory did not come back empty after erase";
+        return false;
+    }
+    s_last_error = "";
+    return true;
+}
+
 const uint8_t *store_file_data(const store_run_t *run, const store_file_t *f) {
     return flash_xip_ptr(data_base() + run->blob_off + f->offset);
 }

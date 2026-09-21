@@ -81,6 +81,8 @@ typedef struct {
 static vobj_t s_obj[MAX_OBJECTS];
 static unsigned s_nobj;
 static unsigned s_runs_dir = MAX_OBJECTS;
+static unsigned s_readme_obj = MAX_OBJECTS;
+static bool s_wipe_done;
 static uint16_t s_fat_date, s_fat_time;
 static uint32_t s_serial;
 static uint32_t s_used_end;     // first cluster after all allocated objects
@@ -107,6 +109,7 @@ static const char s_readme[] =
     "  RUNS\\         all stored runs (RUN0001, RUN0002, ...), up to 16, oldest dropped\r\n"
     "\r\n"
     "Deleting a RUNS\\RUNxxxx folder (or RUNS) deletes those runs from flash.\r\n"
+    "Deleting THIS file erases every stored run and restarts numbering at RUN0001.\r\n"
     "Other changes to this disk are kept in RAM only and vanish after a restart.\r\n"
     "\r\n"
     "LED:\r\n"
@@ -117,7 +120,8 @@ static const char s_readme[] =
     "\r\n"
     "The tests run once after a new firmware is flashed. To run them again, hold the\r\n"
     "BOOTSEL button (or KEY on the WeAct RP2350B) for about 1 second while this disk is\r\n"
-    "shown, or send 'r' on the PicoBench serial console.\r\n"
+    "shown and then release it, or send 'r' on the PicoBench serial console.\r\n"
+    "Holding the same button for 5 seconds erases every stored run instead.\r\n"
     "\r\n"
     "Firmware " PICOBENCH_VERSION "+" PICOBENCH_GIT_SHA ", build " PICOBENCH_BUILD_ID_STR
     ", " PICOBENCH_PLATFORM "\r\n";
@@ -212,7 +216,9 @@ void msc_disk_build(void *overlay, uint32_t overlay_bytes, const char *status, u
     parse_build_time();
     s_serial = PICOBENCH_BUILD_ID ^ store_dir_seq();
 
-    add_obj("README.TXT", OBJ_FILE, ROOT_PARENT, (const uint8_t *)s_readme, sizeof(s_readme) - 1);
+    s_readme_obj = add_obj("README.TXT", OBJ_FILE, ROOT_PARENT, (const uint8_t *)s_readme,
+                           sizeof(s_readme) - 1);
+    s_wipe_done = false;
     if (status) add_obj("STATUS.TXT", OBJ_FILE, ROOT_PARENT, (const uint8_t *)status, status_len);
     const store_run_t *latest = store_latest();
     if (latest) add_run_files(latest, ROOT_PARENT);
@@ -430,7 +436,7 @@ static void read_sector(uint32_t lba, uint8_t *b) {
 
 // Is there a live directory entry pointing at `cluster` in the directory stored in
 // sectors [lba, lba + nsectors)?
-static bool dir_has_live_entry(uint32_t lba, uint32_t nsectors, uint32_t cluster) {
+static bool dir_has_live_entry_kind(uint32_t lba, uint32_t nsectors, uint32_t cluster, bool want_dir) {
     uint8_t b[SECTOR_SIZE];
     for (uint32_t s = 0; s < nsectors; s++) {
         read_sector(lba + s, b);
@@ -438,13 +444,29 @@ static bool dir_has_live_entry(uint32_t lba, uint32_t nsectors, uint32_t cluster
             const uint8_t *e = b + 32u * k;
             if (e[0] == 0x00) return false;           // end of directory
             if (e[0] == 0xE5 || e[11] == ATTR_LFN) continue;
-            if ((e[11] & ATTR_DIRECTORY) && get16(e + 26) == cluster) return true;
+            bool is_dir = (e[11] & ATTR_DIRECTORY) != 0;
+            if (is_dir == want_dir && get16(e + 26) == cluster) return true;
         }
     }
     return false;
 }
 
+static bool dir_has_live_entry(uint32_t lba, uint32_t nsectors, uint32_t cluster) {
+    return dir_has_live_entry_kind(lba, nsectors, cluster, true);
+}
+
+// Deleting README.TXT is the "no terminal needed" way to erase the whole store.
+static void scan_wipe_request(void) {
+    if (s_wipe_done || s_readme_obj >= s_nobj) return;
+    const vobj_t *readme = &s_obj[s_readme_obj];
+    if (!readme->nclusters) return;
+    if (dir_has_live_entry_kind(ROOT_START, ROOT_SECTORS, readme->first_cluster, false)) return;
+    s_wipe_done = true;   // once per session, whatever the outcome
+    store_erase_all();    // the empty store is what the next boot will show
+}
+
 static void scan_deletions(void) {
+    scan_wipe_request();
     if (s_runs_dir >= s_nobj) return;
     const vobj_t *runs = &s_obj[s_runs_dir];
     bool runs_alive = runs->nclusters &&

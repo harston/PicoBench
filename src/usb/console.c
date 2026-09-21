@@ -98,10 +98,32 @@ static void print_status(void) {
     cdc_write(t, len);
 }
 
+// Two presses of Z within this window erase every stored run.
+#define WIPE_CONFIRM_MS 10000
+
+static absolute_time_t s_wipe_armed_until;
+
+static void wipe_command(void) {
+    if (!time_reached(s_wipe_armed_until)) {
+        if (store_erase_all()) {
+            cdc_puts("All stored runs erased; numbering restarts at RUN0001.\r\n"
+                     "Unplug and replug to see the empty disk.\r\n");
+        } else {
+            cdc_printf("Erase failed: %s\r\n", store_last_error());
+        }
+        s_wipe_armed_until = get_absolute_time();
+        return;
+    }
+    s_wipe_armed_until = make_timeout_time_ms(WIPE_CONFIRM_MS);
+    cdc_printf("This erases all %u stored run(s) and restarts numbering at RUN0001.\r\n"
+               "Press Z again within 10 s to confirm.\r\n", store_run_count());
+}
+
 static void help(void) {
     cdc_puts("\r\nPicoBench " PICOBENCH_VERSION "+" PICOBENCH_GIT_SHA " build " PICOBENCH_BUILD_ID_STR "\r\n"
              "  d  REPORT.TXT   e  ERRORS.TXT   s  STATUS.TXT   l  list runs\r\n"
-             "  r  run tests again   b  reboot to BOOTSEL   h  help\r\n");
+             "  r  run tests again   b  reboot to BOOTSEL   h  help\r\n"
+             "  Z  erase all stored runs (asks for confirmation)\r\n");
 }
 
 void console_task(void) {
@@ -129,6 +151,7 @@ void console_task(void) {
         sleep_ms(100);
         reset_usb_boot(0, 0);
         break;
+    case 'Z': wipe_command(); break;
     case 'h': case '?': help(); break;
     default: break;
     }

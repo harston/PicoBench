@@ -379,8 +379,41 @@ static void test_16mb_board(void) {
     printf("16 MB board: results area at 0x%06x, %u runs kept\n", s_layout.results_base, store_run_count());
 }
 
+// Erasing the store must forget every run, restart numbering at RUN0001 and clear the
+// remembered build id (so the next boot runs the tests again).
+static void test_erase_all(void) {
+    layout_init(FLASH_BYTES);
+    memset(s_flash, 0xFF, FLASH_BYTES);
+    store_mount();
+    for (unsigned i = 0; i < 3; i++) {
+        uint32_t run_no = store_next_run_no();
+        new_spec(run_no, 20000);
+        CHECK(store_write_run(s_files, 3, 0xABC, run_no, 0));
+    }
+    store_mount();
+    CHECK(store_run_count() == 3);
+    CHECK(store_next_run_no() == 4);
+    CHECK(store_last_build_id() == 0xABC);
+
+    CHECK(store_erase_all());
+    CHECK(store_run_count() == 0);
+    CHECK(store_next_run_no() == 1);
+    CHECK(store_last_build_id() == 0);
+    store_mount();                       // survives a "reboot"
+    CHECK(store_run_count() == 0 && store_next_run_no() == 1);
+
+    uint32_t run_no = store_next_run_no();
+    new_spec(run_no, 20000);
+    CHECK(store_write_run(s_files, 3, 0xABC, run_no, 0));
+    store_mount();
+    CHECK(store_latest() && store_latest()->run_no == 1);
+    verify_all_runs();
+    printf("erase all: numbering restarted at RUN%04u\n", store_latest()->run_no);
+}
+
 int main(void) {
     test_16mb_board();
+    test_erase_all();
     layout_init(FLASH_BYTES);
     test_many_runs();
     test_power_loss();

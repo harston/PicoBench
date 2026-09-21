@@ -118,7 +118,20 @@ gets flashed to hardware.
   it is not a button on that board and is ignored.
 - **A button held at boot must be released before it counts as a press.** The press that
   requested the re-run is still held while the board reboots; without this rule one long
-  press produced two runs (observed on the WeAct).
+  press produced two runs (observed on the WeAct). The action happens **on release**:
+  1-5 s = run the tests again, 5 s or more = erase every stored run first (the LED
+  switches from solid to blinking when the erase threshold is passed).
+
+### Erasing the stored runs
+
+`next_run_no` lives in the store directory in flash (`store_dir_t`), not on the USB
+disk, so deleting folders never resets numbering - run numbers identify reports and are
+never reused. Three ways to wipe the store and restart at RUN0001, all calling
+`store_erase_all()` (erases both directory sectors, clears `last_build_id`, so the next
+boot tests again):
+- console `Z`, confirmed by pressing `Z` again within 10 s,
+- deleting `README.TXT` on the disk (no terminal needed),
+- holding the button for 5 s and releasing.
 - Every other boot skips the tests and only mounts the report disk.
 - Flashing a new UF2 does not erase the results area, so run history survives upgrades.
 

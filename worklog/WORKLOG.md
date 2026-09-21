@@ -4,6 +4,22 @@ Newest entry first. Each entry: what was done, decisions, hardware results, open
 
 ---
 
+## 2026-09-21 — Erasing the stored runs (three ways)
+
+**Question from the user**: after deleting run folders, new runs keep counting up. Where is the next number kept?
+- In the store directory in flash: `store_dir_t.next_run_no` (src/storage/results_store.c), in the A/B directory sectors at the start of the results area (0xC00000 on a 16 MB board). Not on the USB disk, so deleting folders cannot reset it - by design, because run numbers identify reports and reusing one would make two different reports called RUN0003.
+
+**Added** `store_erase_all()`: erases both directory sectors, so every run is forgotten, numbering restarts at RUN0001 and `last_build_id` is cleared (the next boot runs the tests again). Reachable three ways, as requested:
+1. console `Z`, confirmed with a second `Z` within 10 s,
+2. deleting `README.TXT` on the disk - detected by the same directory scan that handles run deletion, once per session,
+3. holding the button for 5 s and releasing (1-5 s still means "run again"; the LED switches from solid to blinking when the erase threshold is passed).
+
+Button actions now happen **on release** rather than while held, which also removes the last trace of the double-run problem.
+
+Host test `test_erase_all` covers the whole cycle: three runs, erase, numbering back to RUN0001, `last_build_id` cleared, and the new run readable after a remount.
+
+---
+
 ## 2026-09-21 — Phase 7: cartridge hot path
 
 **What it measures**

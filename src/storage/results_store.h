@@ -78,6 +78,12 @@ bool store_delete_runs(const uint32_t *run_nos, unsigned n);
 // Why the last store_write_run()/store_delete_runs() failed ("" after success).
 const char *store_last_error(void);
 
+// Erase both directory sectors: all runs are forgotten and numbering restarts at
+// RUN0001. The stored file data is left in place but becomes unreachable and is
+// overwritten by the next run. Also clears last_build_id, so the next boot runs the
+// tests again.
+bool store_erase_all(void);
+
 // XIP address of a file's content.
 const uint8_t *store_file_data(const store_run_t *run, const store_file_t *f);
 

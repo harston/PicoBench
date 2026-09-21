@@ -42,7 +42,8 @@
 bi_decl(bi_program_feature("Build ID " PICOBENCH_BUILD_ID_STR));
 bi_decl(bi_program_feature("Platform " PICOBENCH_PLATFORM));
 
-#define RERUN_HOLD_MS 1000
+#define RERUN_HOLD_MS 1000    // hold this long, then release: run the tests again
+#define WIPE_HOLD_MS  5000    // keep holding: erase every stored run
 
 // Files stored with every run, in this order.
 static const store_file_spec_t s_run_files[] = {
@@ -167,11 +168,22 @@ int main(void) {
         if (time_reached(next_poll)) {
             next_poll = make_timeout_time_ms(50);
             if (button_pressed()) {
-                if (held_ms == 0) led_status(LED_STATUS_WRITING);   // feedback: solid while held
+                if (held_ms == 0) led_status(LED_STATUS_WRITING);   // solid while held
                 held_ms += 50;
-                if (held_ms >= RERUN_HOLD_MS) guard_request_rerun();
+                // Past the erase threshold the LED starts blinking: let go now and the
+                // whole store is erased; let go earlier and the tests simply run again.
+                if (held_ms == WIPE_HOLD_MS) led_status(LED_STATUS_TESTING);
             } else if (held_ms) {
+                // Acting on release, not while held: the button is usually still down
+                // when the board reboots, and that used to start a second run.
+                bool wipe = held_ms >= WIPE_HOLD_MS;
+                bool rerun = held_ms >= RERUN_HOLD_MS;
                 held_ms = 0;
+                if (wipe) {
+                    led_status(LED_STATUS_WRITING);
+                    store_erase_all();
+                }
+                if (rerun) guard_request_rerun();          // reboots; does not return
                 led_status(pass ? LED_STATUS_DONE_PASS : LED_STATUS_DONE_FAIL);
             }
         }

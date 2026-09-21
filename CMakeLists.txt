@@ -85,7 +85,12 @@ add_executable(picobench
     src/tests/flash_mode.c
     src/tests/flash_write.c
     src/tests/flash_xip.c
+    src/tests/dma.c
+    src/tests/gpio_sio.c
     src/tests/hotpath.c
+    src/tests/irq_timer.c
+    src/tests/multicore.c
+    src/tests/pio.c
     src/tests/psram_bench.c
     src/tests/psram_integrity.c
     src/tests/qmi_conflict.c
@@ -116,11 +121,13 @@ target_compile_definitions(picobench PRIVATE PICO_RP2350_A2_SUPPORTED=1)
 
 target_link_libraries(picobench
     pico_stdlib
+    pico_multicore
     pico_rand
     hardware_pwm
     hardware_adc
     hardware_clocks
     hardware_dma
+    hardware_pio
     hardware_flash
     hardware_pll
     pico_unique_id

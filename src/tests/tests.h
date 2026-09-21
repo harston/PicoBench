@@ -52,6 +52,20 @@ test_result_t test_hotpath_memory(test_ctx_t *ctx);
 test_result_t test_hotpath_disturbance(test_ctx_t *ctx);
 test_result_t test_hotpath_patterns(test_ctx_t *ctx);
 
+// gpio_sio.c, pio.c, dma.c, multicore.c, irq_timer.c - phase 8
+test_result_t test_gpio_sio(test_ctx_t *ctx);
+test_result_t test_pio_inventory(test_ctx_t *ctx);
+test_result_t test_pio_fifo(test_ctx_t *ctx);
+test_result_t test_pio_irq(test_ctx_t *ctx);
+test_result_t test_pio_dma(test_ctx_t *ctx);
+test_result_t test_dma_channels(test_ctx_t *ctx);
+test_result_t test_dma_transfer(test_ctx_t *ctx);
+test_result_t test_dma_parallel(test_ctx_t *ctx);
+test_result_t test_dma_chain_and_pacing(test_ctx_t *ctx);
+test_result_t test_multicore(test_ctx_t *ctx);
+test_result_t test_irq_latency(test_ctx_t *ctx);
+test_result_t test_irq_storm(test_ctx_t *ctx);
+
 // selftest.c - infrastructure self-checks
 test_result_t test_timing_counter(test_ctx_t *ctx);
 test_result_t test_clocks_readback(test_ctx_t *ctx);

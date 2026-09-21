@@ -11,12 +11,12 @@
 
 // Sized for a full run: phase 4 alone produces several hundred records, and the
 // sweeps multiply the ones flagged TF_SWEEP by the number of operating points.
-// Phase 5 already fills 40 KB of the RP2040 arena (81 %), so give both chips headroom
-// for the phases still to come.
+// Phase 7 filled 53 KB of the RP2040's 64 KB arena; phase 8 adds another dozen tests,
+// several of them swept over five operating points.
 #if PICO_RP2040
-#define ARENA_BYTES (64 * 1024)
+#define ARENA_BYTES (96 * 1024)
 #else
-#define ARENA_BYTES (128 * 1024)
+#define ARENA_BYTES (160 * 1024)
 #endif
 
 #define ARENA_MAGIC 0x50424152u   // "PBAR"

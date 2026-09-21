@@ -4,6 +4,28 @@ Newest entry first. Each entry: what was done, decisions, hardware results, open
 
 ---
 
+## 2026-09-21 — Phase 8: PIO, GPIO, DMA, multicore, interrupts
+
+**Done** (12 tests, ids 700-741; the registry now holds 52 tests, 96 stages with the sweeps)
+- `pio.inventory` (700): every PIO block and all four state machines each load a program and echo a word; the programs are assembled at run time with `pio_encode_*`, so there is no pioasm build step and the instructions are visible in the source. No state machine is given pins, so nothing is driven externally.
+- `pio.fifo` (701, swept): CPU -> TX FIFO -> state machine -> RX FIFO -> CPU round trip, the cost of a FIFO write on its own, and the sustained rate with the FIFO kept fed.
+- `pio.irq` (702): time from the trigger word to the PIO interrupt flag being readable.
+- `pio.dma` (703): DMA feeding a state machine that consumes 32 bits per instruction.
+- `gpio.sio` (710): cost of every SIO GPIO operation (set/clr/xor/out/in/oe), plus the **output-to-input turnaround**: how long after writing the output register the level is readable back. Driving a pin needs a free pin, so the test first proves the candidate floats (pull-up reads high, pull-down reads low) and skips the measurement otherwise - it never fights an external driver. GPIO 28/27/26/22/21/20 are tried in that order and the pin is left as a floating input.
+- `dma.channels` (720): every channel copies and verifies 1 KB. `dma.transfer` (721, swept): 64 B to 64 KB plus single-word overhead. `dma.parallel` (722): 1/2/4/8 channels started together, to find where the bus saturates. `dma.chain_pacing` (723): chained transfers and a timer-paced transfer at 1/64 of clk_sys.
+- `multicore.basic` (730): core 1 launch time, inter-core FIFO round trip, spinlock cost, and **core-to-core SRAM contention** in the same and the other bank group (the phase 4 item that needed core 1). Core 1 runs entirely from SRAM and is reset afterwards.
+- `irq.latency` (740, swept): software interrupt entry and round trip, hardware alarm latency against its deadline, and the same with DMA running. `irq.storm` (741): foreground work under a 50 kHz repeating timer.
+
+**Care taken**
+- Every wait loop is bounded and records an error instead of hanging: a stuck PIO, a missing interrupt or a pin held externally becomes a reported failure rather than a watchdog reset.
+- `hardware_alarm_set_target()` returns true when the deadline was already missed, which is checked rather than assumed.
+- Record arena enlarged again (RP2040 96 KB, RP2350 160 KB): phase 7 already used 53 KB of the RP2040's 64 KB. RAM now: RP2040 173 KB of 264 KB, RP2350 269 KB of 520 KB.
+
+**Hardware verification to do**
+- All three boards. Watch for: all PIO state machines answering, the CPU-PIO round trip (the number a PIO-based cartridge path depends on), DMA parallel saturation, core-to-core contention, and the alarm latency distribution.
+
+---
+
 ## 2026-09-21 — Erasing the stored runs (three ways)
 
 **Question from the user**: after deleting run folders, new runs keep counting up. Where is the next number kept?

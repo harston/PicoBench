@@ -4,6 +4,53 @@ Newest entry first. Each entry: what was done, decisions, hardware results, open
 
 ---
 
+## 2026-09-20 — Phase 5: flash, XIP and cache
+
+**Done**
+- `src/tests/flash_xip.c`
+  - `flash.read` (410, swept): cached warm 4 KB (fits the 16 KB cache) for 32/16/8-bit, cached streaming 64 KB (four times the cache), and the uncached alias for 4 KB and 64 KB, all with kB/s.
+  - `flash.cache` (411): hit latency, **cold-miss latency with the cache invalidated and a fresh address for every sample** (min/p50/p95/p99/max plus the worst case), uncached single read, one read per cache line over 64 KB, a working-set sweep from 2 KB to 64 KB that shows where the 16 KB cache stops holding the data, and the cost of `xip_cache_invalidate_all()`.
+  - `flash.code_exec` (412, swept): the same loop executed from SRAM, from flash warm, and from flash with the cache invalidated before every call, with the overhead in percent and the worst case in cycles. This is the number the cartridge design depends on.
+  - `flash.copy_to_sram` (413): memcpy 1-64 KB, cached and uncached.
+  - Sample counts scale with the block size (~1 MB of traffic per measurement) instead of a fixed 256, so a 64 KB block does not read 16 MB through a 25 MB/s interface.
+- `src/tests/flash_write.c` (420, risky): erase a sector, verify erased, program a page, program the rest of the sector, verify, erase four sectors, verify, program again - all inside the reserved 64 KB scratch area, with times from the 1 MHz timer. About six erase cycles per run against a 100k-cycle endurance rating.
+- `src/tests/flash_mode.c` (430, risky, RP2350): sweeps read mode (03h serial, 0Bh fast serial, BBh dual, EBh quad) against clock dividers 4/3/2. For each combination it switches the mode from SRAM with interrupts off, verifies a 32 KB checksum through the uncached alias, measures only if the checksum matches, and always restores the original mode and timing register. **It never writes to the flash chip**, so the QE bit is untouched and a chip with QE clear simply reports the quad modes as unusable - which answers the clone question directly.
+- 32 tests, 7 of them swept -> 60 stages.
+
+**Bug caught before hardware (the .dis check earned its keep)**
+- `try_mode`, `ram_checksum` and `ram_read_block` were marked `__not_in_flash_func`, but the compiler inlined all three into `test_flash_xip_mode_sweep`, which lives in flash (0x10005dc4). The mode switch would then have executed from flash while flash was unreadable. Fixed with `__no_inline_not_in_flash_func`; verified that `try_mode` now sits at 0x200184fc and makes no calls into flash (only ROM function pointers and SRAM helpers). Written up in CLAUDE.md.
+
+**Hardware verification (WeAct RP2350B RUN0015 and purple RP2040 clone RUN0002; 59/59 stages, 0 crashes, 0 errors each; the RP2350A clone directory was empty)**
+
+| | WeAct RP2350B @150 MHz (quad, SCK 50 MHz) | purple RP2040 @125 MHz (SCK 62.5 MHz) |
+|---|---|---|
+| cache hit (single read) | 8.0 cycles | 8.0 cycles |
+| **cold miss, single read** | **175 cycles** | **215 cycles** |
+| miss per cache line, streaming | 78.8 cycles | 53.8 cycles |
+| XIP streaming read (64 KB) | 11.3 MB/s | 9.3 MB/s |
+| uncached read | 11.0 MB/s | 9.6 MB/s |
+| cached read inside 16 KB | 238.6 MB/s | 142.0 MB/s |
+| code from flash, warm | same as SRAM (0 %) | same as SRAM (-1 %) |
+| code from flash, cold cache | +28 % | +19 % |
+| erase 4 KB sector | 2.2 ms | **28.9 ms** |
+| program 256 B page | 511 us | 369 us |
+| verify errors | 0 | 0 |
+
+- **The 16 KB cache boundary is sharply visible**: 2.5 cycles per word for working sets of 2-16 KB, then 45.6 cycles at 32 KB (RP2040: 3.5 -> 47.0). Anything that must be fast has to fit in 16 KB or live in SRAM.
+- The measured streaming rate matches the model from the earlier analysis: quad at 50 MHz needs ~36 SCK per 8-byte line = 4.5 SCK/byte -> 11.1 MB/s, measured 11.3.
+- `xip_cache_invalidate_all()` costs 12657 cycles on RP2350 but only 1303 on RP2040.
+- The purple clone's flash erases a sector in 28.9 ms, thirteen times slower than the WeAct's XMC part. Worth knowing before designing anything that writes flash at run time.
+- **DMA contention, now with proof**: the reworked test moved 530170 words on RP2350 (**5 % CPU slowdown**, 458 MB/s of DMA traffic) and 1048576 words on RP2040 (**25 % slowdown**). The earlier "0 % / 7 %" came from a DMA configuration that barely generated traffic.
+
+**Bug found in the run and fixed**
+- The XIP mode sweep reported "1 cycles for 4 KB" for all twelve combinations: the pure read block was moved out from between the two cycle-counter reads. Same class as the phase 4 bugs; now called through a volatile function pointer with a register barrier (verified in the .dis). The checksums and the restore were fine - all 12 combinations verified correct on the WeAct, and the flash still read correctly afterwards.
+- Result arena enlarged (RP2040 64 KB, RP2350 128 KB): phase 5 already used 81 % of the old RP2040 arena.
+
+**Still to verify**
+- The mode sweep timings after the fix, and the RP2350A clone (dual mode): does it accept quad without the QE bit, and does divider 2 work?
+
+---
+
 ## 2026-09-20 — Phase 4: CPU and SRAM measurements
 
 **Done**

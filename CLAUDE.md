@@ -91,8 +91,8 @@ gets flashed to hardware.
   last in its own page; the higher sequence number wins. Runs that will be overwritten
   are dropped in an intermediate directory commit *before* their sectors are erased.
   Up to 16 runs are kept.
-- Stored files per run: REPORT.TXT, RESULTS.CSV, ERRORS.TXT (HARDWARE.TXT, RESULTS.JSON
-  and RAW.BIN come in later phases). Writers are called twice (size, then write) and must be
+- Stored files per run: REPORT.TXT, HARDWARE.TXT, RESULTS.CSV, ERRORS.TXT
+  (RESULTS.JSON and RAW.BIN come in a later phase). Writers are called twice (size, then write) and must be
   deterministic. They must not print anything that changes between the passes (e.g. the
   directory sequence number).
 - The virtual disk (`src/usb/msc_disk.c`) is generated on the fly: 16 MB FAT16, 512-byte
@@ -229,6 +229,10 @@ At `-O3` the compiler will happily destroy a benchmark. After writing a kernel,
   all; M0+ and Hazard3 record why instead.
 - Unrolling matters for anything measured per access: with a tight loop the loop
   overhead hid the difference between access strides entirely.
+- **`__not_in_flash_func` does not stop inlining.** A static helper marked that way was
+  inlined into its flash-resident caller, so the SRAM copy was never executed - fatal
+  for code that runs while flash is unreadable (XIP mode switching). Use
+  `__no_inline_not_in_flash_func` there and check the symbol's address in the `.dis`.
 5. A test running longer than ~4 s must call `guard_keepalive()` (watchdog is 5 s).
 6. Returning `TR_PASS` with `ctx->errors > 0` is turned into `TR_FAIL` automatically.
 

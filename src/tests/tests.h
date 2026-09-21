@@ -32,6 +32,14 @@ test_result_t test_sram_stride(test_ctx_t *ctx);
 test_result_t test_sram_latency(test_ctx_t *ctx);
 test_result_t test_sram_contention_dma(test_ctx_t *ctx);
 
+// flash_xip.c, flash_write.c, flash_mode.c - flash, XIP and cache
+test_result_t test_flash_read(test_ctx_t *ctx);
+test_result_t test_flash_cache(test_ctx_t *ctx);
+test_result_t test_flash_code_exec(test_ctx_t *ctx);
+test_result_t test_flash_copy_to_sram(test_ctx_t *ctx);
+test_result_t test_flash_write_scratch(test_ctx_t *ctx);
+test_result_t test_flash_xip_mode_sweep(test_ctx_t *ctx);
+
 // selftest.c - infrastructure self-checks
 test_result_t test_timing_counter(test_ctx_t *ctx);
 test_result_t test_clocks_readback(test_ctx_t *ctx);

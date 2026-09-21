@@ -49,6 +49,10 @@
 #define ADDR_COUNT  4096u             // synthetic address sequence, power of two
 #define ADDR_MASK   (ADDR_COUNT - 1u)
 
+// Free SRAM the test needs: the 16 KB table plus the 4 KB DMA ring placed at +32 KB.
+// (RP2040 has ~112 KB free, so requiring 256 KB silently skipped the whole test.)
+#define HOTPATH_RAM_NEEDED (48u * 1024u)
+
 #define ITERATIONS  200000u
 #define ITERATIONS_HEADLINE 1000000u
 
@@ -137,7 +141,7 @@ static bool traffic_start(traffic_t t) {
     if (t == TRAFFIC_NONE) return true;
     s_dma_ch = dma_claim_unused_channel(false);
     if (s_dma_ch < 0) return false;
-    uintptr_t src = t == TRAFFIC_DMA_SRAM ? (uintptr_t)(bench_ram() + 128u * 1024u)
+    uintptr_t src = t == TRAFFIC_DMA_SRAM ? (uintptr_t)(bench_ram() + 32u * 1024u)
                                           : PSRAM_NOCACHE_BASE;
     src = (src + (1u << DMA_RING_BITS) - 1u) & ~((uintptr_t)(1u << DMA_RING_BITS) - 1u);
     dma_channel_config c = dma_channel_get_default_config(s_dma_ch);
@@ -246,7 +250,7 @@ static uint8_t *sram_rom(void) {
 }
 
 test_result_t test_hotpath_memory(test_ctx_t *ctx) {
-    if (bench_ram_size() < 256u * 1024u) return TR_NA;
+    if (bench_ram_size() < HOTPATH_RAM_NEEDED) return TR_NA;
     const uint8_t *rom_sram = sram_rom();
     const uint8_t *rom_flash = (const uint8_t *)XIP_BASE;               // the firmware image
     const uint8_t *rom_flash_uncached = (const uint8_t *)XIP_NOCACHE_NOALLOC_BASE;
@@ -302,7 +306,7 @@ test_result_t test_hotpath_memory(test_ctx_t *ctx) {
 }
 
 test_result_t test_hotpath_disturbance(test_ctx_t *ctx) {
-    if (bench_ram_size() < 256u * 1024u) return TR_NA;
+    if (bench_ram_size() < HOTPATH_RAM_NEEDED) return TR_NA;
     const uint8_t *rom_sram = sram_rom();
     const uint8_t *rom_flash = (const uint8_t *)XIP_BASE;
 
@@ -348,7 +352,7 @@ test_result_t test_hotpath_disturbance(test_ctx_t *ctx) {
 }
 
 test_result_t test_hotpath_patterns(test_ctx_t *ctx) {
-    if (bench_ram_size() < 256u * 1024u) return TR_NA;
+    if (bench_ram_size() < HOTPATH_RAM_NEEDED) return TR_NA;
     const uint8_t *rom_sram = sram_rom();
     variant_t v = {.rom = rom_sram, .rom_mask = ROM_MASK, .code_in_sram = true,
                    .iterations = ITERATIONS};

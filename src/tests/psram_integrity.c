@@ -142,15 +142,31 @@ static uint32_t size_check(test_ctx_t *ctx, uint32_t bytes) {
     const uint32_t marker = 0xC0DEFACEu;
     uint32_t bad = 0;
     p[0] = marker;
+    if (p[0] != marker) {   // not an addressing question at all
+        rec_text(ctx, "address_wrap", "cannot test: offset 0 reads back 0x%08lx instead of 0x%08lx",
+                 (unsigned long)p[0], (unsigned long)marker);
+        rec_error(ctx, "psram_not_responding", 0, marker, p[0]);
+        return 1;
+    }
     for (uint32_t off = 64u * 1024u; off < bytes; off <<= 1) {
         p[off / 4u] = ~marker;                 // different value at the mirror candidate
-        if (p[0] != marker) {
-            rec_text(ctx, "address_wrap", "writing at 0x%06lx changed offset 0: the chip is only "
-                     "%lu KB, not the %lu KB reported", (unsigned long)off,
-                     (unsigned long)(off / 1024), (unsigned long)(bytes / 1024));
-            rec_error(ctx, "psram_size_overstated", off, bytes, off);
+        uint32_t at_off = p[off / 4u];
+        uint32_t at_zero = p[0];
+        if (at_zero == marker) continue;       // no mirroring at this offset
+        if (at_off != ~marker) {
+            // Neither location holds what was written: the chip is not answering
+            // correctly, which is a different fault from a smaller-than-claimed chip.
+            rec_text(ctx, "address_wrap", "inconclusive at 0x%06lx: 0x%08lx at the offset, "
+                     "0x%08lx at zero", (unsigned long)off, (unsigned long)at_off,
+                     (unsigned long)at_zero);
+            rec_error(ctx, "psram_not_responding", off, ~marker, at_off);
             return 1;
         }
+        rec_text(ctx, "address_wrap", "writing at 0x%06lx changed offset 0: the chip is only "
+                 "%lu KB, not the %lu KB reported", (unsigned long)off,
+                 (unsigned long)(off / 1024), (unsigned long)(bytes / 1024));
+        rec_error(ctx, "psram_size_overstated", off, bytes, off);
+        return 1;
     }
     rec_text(ctx, "address_wrap", "none up to %lu KB", (unsigned long)(bytes / 1024));
 
@@ -182,6 +198,12 @@ test_result_t test_psram_integrity(test_ctx_t *ctx) {
     if (!g_psram.present || !g_psram.initialised) {
         rec_text(ctx, "psram", "not present (see psram.detect)");
         return TR_NA;
+    }
+    // Do not trust the QMI state left by earlier stages: the XIP mode sweep and any
+    // flash write reconfigure the shared controller.
+    if (!psram_reapply()) {
+        rec_error(ctx, "psram_reapply", 0, 1, 0);
+        return TR_FAIL;
     }
     uint32_t bytes = g_psram.size;
     rec_text(ctx, "area", "%lu KB on GPIO%u, tested through the uncached alias 0x%08lx",

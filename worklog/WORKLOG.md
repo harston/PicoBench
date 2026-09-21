@@ -17,8 +17,19 @@ Newest entry first. Each entry: what was done, decisions, hardware results, open
 - PSRAM is initialised by `psram.detect` in phase 3; these tests re-check `g_psram.present` because a crash-resume does not repeat the detection stage.
 - The SDK's `psram_initialize_internal` is RAM-resident, so reconfiguring the PSRAM window is safe from flash-resident code (that is what the SDK's own boot path does).
 
-**Hardware verification to do**
-- First on a board *without* PSRAM (all stages N/A, run unaffected), then on the WeAct once the chip is fitted: detection in HARDWARE.TXT, zero integrity errors, the timing sweep table, and above all `qmi.conflict` - whether PSRAM traffic stretches the worst-case flash miss.
+**Hardware verification (WeAct RP2350B with an 8 MB APS6404 fitted by the user, RUN0016, 68/68 stages, 0 crashes)**
+- Detection: `probe_gpio0` -> MFID 0d, KGD 5d, EID 53, 8 MB, AP Memory class, first/last word sanity OK.
+- **`psram.integrity` reported 10.3 M errors - my bug, not the hardware.** `rom_flash_select_xip_read_mode()` configures *both* chip selects (it says so in the SDK header), so `flash.xip_mode_sweep`, which runs two stages earlier, left the PSRAM window configured as flash. Reads returned 0xcccccccc and the size probe wrongly concluded "64 KB".
+  - Fixed: new `psram_reapply()` helper (src/detect/psram_detect.c); the mode sweep restores the PSRAM window and reports whether it succeeded; `psram.integrity` re-applies the profile on entry instead of trusting earlier stages; the size probe now distinguishes "mirrored address" from "chip not answering".
+- Everything that re-initialised PSRAM itself produced clean results, which is the proof the soldering is good:
+  - **timing sweep: 9 of 9 combinations stable**, zero bad words in 256 KB: 37.5 MHz 15.6 MB/s, 50 MHz 20.3 MB/s, 75 MHz 28.7 MB/s.
+  - throughput at 75 MHz: read 27.3 MB/s, write 33.7 MB/s; cached read inside 16 KB 251 MB/s.
+  - latency: hit 8 cycles, cold miss 124, uncached single read 59; **dependent load 53.1 cycles uncached vs 2.3 cached**.
+  - copies: SRAM->PSRAM 20.6 (CPU) / 34.5 (DMA) MB/s, PSRAM->SRAM 15.6 / 29.1, PSRAM->PSRAM 6.6 / 8.0.
+- **`qmi.conflict` - the headline result for the cartridge**: with a PSRAM DMA stream running, a flash cold miss goes from **171 to 436 cycles (+154 %)** and flash streaming reads collapse by ~30x; the reverse (flash DMA vs PSRAM reads) costs only 21 %. Cause: `max_select` = 18 means one PSRAM transaction can hold QMI for 1152 clk_sys cycles (~7.7 us at 150 MHz). Written up in CLAUDE.md.
+
+**Next**
+- Re-run with the fix: `psram.integrity` should pass cleanly. Then phase 7 (cartridge hot path), where this QMI finding directly shapes the variants worth measuring.
 
 ---
 

@@ -36,7 +36,26 @@ test_result_t test_psram_detect(test_ctx_t *ctx) {
     return TR_NA;
 }
 
+bool psram_reapply(void) {
+    return false;
+}
+
 #else
+
+bool psram_reapply(void) {
+    if (!g_psram.present) return false;
+    int rc = psram_configure_params(PICO_DEFAULT_PSRAM_MAX_FREQ, PICO_DEFAULT_PSRAM_MAX_SELECT,
+                                    PICO_DEFAULT_PSRAM_MIN_DESELECT);
+    if (rc == PICO_OK) {
+        uint32_t irq = save_and_disable_interrupts();
+        rc = psram_reinitialize();
+        restore_interrupts(irq);
+    }
+    if (rc != PICO_OK) return false;
+    xip_cache_invalidate_all();
+    g_psram.initialised = true;
+    return true;
+}
 
 // READ ID on CS1 with the pin already routed; returns MFID/KGD/EID bytes.
 static void read_id(uint8_t out[3]) {

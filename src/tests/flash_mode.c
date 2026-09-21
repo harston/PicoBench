@@ -27,6 +27,7 @@
 
 #include "core/guard.h"
 #include "core/timing.h"
+#include "detect/psram_info.h"
 #include "results/record.h"
 
 #if PICO_RP2040
@@ -185,6 +186,15 @@ test_result_t test_flash_xip_mode_sweep(test_ctx_t *ctx) {
                      mode_name(modes[m]), clkdivs[d], (unsigned long)sck,
                      (unsigned long)r.read_cycles, (long long)rate, (unsigned long)r.timing);
         }
+    }
+
+    // The ROM call configures BOTH chip selects, so the PSRAM window was overwritten
+    // with flash settings. Put it back before anything touches PSRAM again.
+    if (g_psram.present) {
+        bool ok = psram_reapply();
+        rec_text(ctx, "psram_window", "%s", ok ? "restored after the sweep"
+                                               : "RESTORE FAILED - PSRAM is unusable until reset");
+        if (!ok) rec_error(ctx, "psram_restore", 0, 1, 0);
     }
 
     // Back in the original mode: prove the flash still reads correctly through the cache.

@@ -183,6 +183,19 @@ gets flashed to hardware.
 - `src/usb/` — TinyUSB MSC serving a virtual FAT volume whose file sectors map directly
   onto XIP flash.
 
+### QMI is shared - flash and PSRAM are not independent
+
+- `rom_flash_select_xip_read_mode()` configures **both chip selects**, so the XIP mode
+  sweep leaves the PSRAM window set up as if it were flash. Any test that reconfigures
+  QMI must call `psram_reapply()` afterwards, and every PSRAM test calls it on entry
+  rather than trusting the state left behind (this produced 10 M bogus "PSRAM errors").
+- Measured on the WeAct with an 8 MB APS6404: a PSRAM DMA stream stretches a **flash
+  cold cache miss from 171 to 436 cycles (+154 %)** and collapses flash streaming reads
+  by ~30x, because one PSRAM transaction can hold the controller for up to max_select
+  (18 x 64 = 1152 clk_sys cycles ~ 7.7 us at 150 MHz). The reverse direction costs PSRAM
+  only ~21 %. For the cartridge: keep critical code and tables in SRAM and keep PSRAM
+  traffic out of time-critical windows.
+
 ### Board facts learned on hardware
 
 - WeAct RP2350B: RP2350-A3 silicon, boot ROM 4. Flash JEDEC `20 40 18` (XMC XM25QH128

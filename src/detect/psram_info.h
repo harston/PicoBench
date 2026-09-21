@@ -21,4 +21,15 @@ typedef struct {
 
 extern psram_info_t g_psram;
 
+/*
+ * Re-apply the SDK PSRAM profile for the current clk_sys and re-initialise the QMI CS1
+ * window. Needed after anything that reconfigures QMI, and after every clk_sys change
+ * (the PSRAM clock is clk_sys / divisor).
+ *
+ * In particular the boot ROM's rom_flash_select_xip_read_mode() configures BOTH chip
+ * selects, so the XIP mode sweep leaves the PSRAM window set up as if it were flash.
+ * Returns false if PSRAM is absent or the re-init failed.
+ */
+bool psram_reapply(void);
+
 #endif

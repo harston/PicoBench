@@ -141,18 +141,10 @@ static void record_access(test_ctx_t *ctx, const char *label, access_fn fn, void
 
 // Re-apply the SDK default profile for the current clk_sys and report what it produced.
 static bool psram_retime(test_ctx_t *ctx) {
-    int rc = psram_configure_params(PICO_DEFAULT_PSRAM_MAX_FREQ, PICO_DEFAULT_PSRAM_MAX_SELECT,
-                                    PICO_DEFAULT_PSRAM_MIN_DESELECT);
-    if (rc == PICO_OK) {
-        uint32_t irq = save_and_disable_interrupts();
-        rc = psram_reinitialize();
-        restore_interrupts(irq);
-    }
-    if (rc != PICO_OK) {
-        rec_error(ctx, "psram_retime", 0, PICO_OK, (uint32_t)rc);
+    if (!psram_reapply()) {
+        rec_error(ctx, "psram_retime", 0, 1, 0);
         return false;
     }
-    xip_cache_invalidate_all();
     uint32_t t = qmi_hw->m[1].timing;
     uint32_t div = FIELD(t, QMI_M1_TIMING_CLKDIV);
     rec_text(ctx, "timing", "divisor %lu -> SCK %lu kHz, rxdelay %lu, max_select %lu, min_deselect %lu",

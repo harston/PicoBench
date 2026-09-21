@@ -47,6 +47,11 @@ test_result_t test_psram_copy(test_ctx_t *ctx);
 test_result_t test_psram_timing_sweep(test_ctx_t *ctx);
 test_result_t test_qmi_conflict(test_ctx_t *ctx);
 
+// hotpath.c - the cartridge hot path
+test_result_t test_hotpath_memory(test_ctx_t *ctx);
+test_result_t test_hotpath_disturbance(test_ctx_t *ctx);
+test_result_t test_hotpath_patterns(test_ctx_t *ctx);
+
 // selftest.c - infrastructure self-checks
 test_result_t test_timing_counter(test_ctx_t *ctx);
 test_result_t test_clocks_readback(test_ctx_t *ctx);

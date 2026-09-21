@@ -5,7 +5,7 @@
 #endif
 
 // Written by core 0 during init; both cores' counters have the same read cost.
-static uint32_t s_overhead;
+uint32_t g_timing_overhead;
 
 void timing_init(void) {
 #if PICO_RP2040
@@ -28,9 +28,6 @@ void timing_init(void) {
         uint32_t e = timing_elapsed(t0, t1);
         if (e < best) best = e;
     }
-    s_overhead = best;
+    g_timing_overhead = best;
 }
 
-uint32_t timing_overhead(void) {
-    return s_overhead;
-}

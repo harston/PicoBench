@@ -42,7 +42,13 @@
 void timing_init(void);
 
 // Cycles consumed by an empty timing_now()/timing_now() pair (minimum observed).
-uint32_t timing_overhead(void);
+// Kept as a variable so subtracting it costs no call: a measurement loop in SRAM would
+// otherwise call into flash on every iteration.
+extern uint32_t g_timing_overhead;
+
+static inline uint32_t timing_overhead(void) {
+    return g_timing_overhead;
+}
 
 static __force_inline uint32_t timing_now(void) {
 #if PICO_RP2040

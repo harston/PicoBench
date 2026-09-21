@@ -4,6 +4,28 @@ Newest entry first. Each entry: what was done, decisions, hardware results, open
 
 ---
 
+## 2026-09-21 — Phase 7: cartridge hot path
+
+**What it measures**
+- One timed iteration per console bus cycle: **read the address bus -> decode bank and offset -> fetch the byte -> write the data port**. The bus read is a real SIO GPIO input read and the data write a real SIO GPIO output write (pads stay inputs, so nothing is driven externally). The synthetic address is mixed with the value read from the pins through a mask that is zero at run time but opaque to the compiler, so the bus read stays on the dependency path.
+- Every iteration goes into the streaming collector: exact distribution up to 1023 cycles, log2 buckets above, plus a per-cycle histogram (128 bins) for the headline variants. 1 M iterations for the reference variant, 200 k for the rest. **p99.9 and max are the numbers that matter** - one late byte is a wrong byte on the console.
+
+**Variants**
+- `hotpath.memory` (600, swept): table in SRAM, table in flash (warm cache / cache invalidated every 256 accesses / uncached alias), table in PSRAM (cached and uncached), and the same path with the loop executing from flash instead of SRAM.
+- `hotpath.disturbance` (601): quiet, with a real 10 kHz timer interrupt (handler in flash, like any SDK callback), with continuous SRAM DMA, and - the phase 6 worst case - with PSRAM DMA hammering the shared QMI, for both an SRAM table and a flash table.
+- `hotpath.patterns` (602): sequential, random, and bank-switching addresses where every eighth access lands on a 0x1FF8-0x1FFB hotspot and changes the active bank, as an F8/F6 mapper does.
+
+**Care taken (verified in the disassembly)**
+- `hot_from_sram` sits at 0x20020714 and `hot_from_flash` at 0x10007238, both out-of-line, so the SRAM/flash comparison is real.
+- The loop contains no calls at all: `timing_overhead()` used to be a function in flash, called once per iteration right after the measurement. It did not corrupt the numbers but would have dominated the runtime of the cold-cache and PSRAM-DMA variants. It is now a plain variable (`g_timing_overhead`).
+- Background DMA uses a bounded address ring and runs continuously for the whole measurement; the words it moved are recorded, so "no effect" can be told from "it never ran".
+- The cold-cache variant invalidates every 256 accesses; with the original 20000 the table would have been back in the cache after the first few accesses.
+
+**Hardware verification to do**
+- All three boards, and on the WeAct with PSRAM fitted. Expected shape from phases 4-6: SRAM table ~10-15 cycles, flash warm similar, flash cold ~180-200, PSRAM uncached ~70-80, and the interesting question - how far p99.9 and max move under PSRAM DMA.
+
+---
+
 ## 2026-09-21 — Phase 6: PSRAM (written before the chip is fitted)
 
 **Done** (all RP2350-only; without a PSRAM chip every stage reports N/A and the run is unaffected)

@@ -94,6 +94,15 @@ const test_desc_t g_tests[] = {
     {520, SUBSYS_PSRAM, CHIP_RP2350, 0, "qmi.conflict",
      "What PSRAM traffic costs flash reads, and the other way round", test_qmi_conflict},
 
+    // ---- Cartridge hot path -----------------------------------------------------------
+    {600, SUBSYS_CPU, CHIP_ALL, TF_SWEEP, "hotpath.memory",
+     "Address decode and byte fetch with the table in SRAM, flash (warm/cold/uncached) and PSRAM",
+     test_hotpath_memory},
+    {601, SUBSYS_CPU, CHIP_ALL, 0, "hotpath.disturbance",
+     "The same path with interrupts, SRAM DMA and PSRAM DMA running", test_hotpath_disturbance},
+    {602, SUBSYS_CPU, CHIP_ALL, 0, "hotpath.patterns",
+     "Sequential, random and bank-switching address patterns", test_hotpath_patterns},
+
     {310, SUBSYS_SRAM, CHIP_ALL, 0, "sram.contention_dma",
      "CPU read loop with a DMA stream in the same and in the other bank group",
      test_sram_contention_dma},

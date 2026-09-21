@@ -85,6 +85,7 @@ add_executable(picobench
     src/tests/flash_mode.c
     src/tests/flash_write.c
     src/tests/flash_xip.c
+    src/tests/hotpath.c
     src/tests/psram_bench.c
     src/tests/psram_integrity.c
     src/tests/qmi_conflict.c

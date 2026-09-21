@@ -80,6 +80,20 @@ const test_desc_t g_tests[] = {
      "Read mode (serial/dual/quad) and clock divider sweep, verified by checksum and restored",
      test_flash_xip_mode_sweep},
 
+    // ---- PSRAM ----------------------------------------------------------------------------
+    {510, SUBSYS_PSRAM, CHIP_RP2350, TF_RISKY, "psram.integrity",
+     "Patterns, address and size checks, narrow accesses and March C- over the PSRAM",
+     test_psram_integrity},
+    {511, SUBSYS_PSRAM, CHIP_RP2350, TF_SWEEP, "psram.bench",
+     "PSRAM read/write throughput and latency, cached and uncached", test_psram_bench},
+    {512, SUBSYS_PSRAM, CHIP_RP2350, 0, "psram.copy",
+     "Copies SRAM<->PSRAM and PSRAM->PSRAM, by CPU and by DMA", test_psram_copy},
+    {513, SUBSYS_PSRAM, CHIP_RP2350, TF_RISKY, "psram.timing_sweep",
+     "QMI divisor and RX delay sweep, each verified by a write/read stress test",
+     test_psram_timing_sweep},
+    {520, SUBSYS_PSRAM, CHIP_RP2350, 0, "qmi.conflict",
+     "What PSRAM traffic costs flash reads, and the other way round", test_qmi_conflict},
+
     {310, SUBSYS_SRAM, CHIP_ALL, 0, "sram.contention_dma",
      "CPU read loop with a DMA stream in the same and in the other bank group",
      test_sram_contention_dma},

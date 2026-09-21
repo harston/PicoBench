@@ -4,6 +4,24 @@ Newest entry first. Each entry: what was done, decisions, hardware results, open
 
 ---
 
+## 2026-09-21 — Phase 6: PSRAM (written before the chip is fitted)
+
+**Done** (all RP2350-only; without a PSRAM chip every stage reports N/A and the run is unaffected)
+- `psram.integrity` (510, risky): full-chip passes for const 00/FF, address and LFSR, then 1 MB passes for const 55/AA, walking ones/zeros and inverted address, plus byte/halfword access and March C- over 1 MB. Two extra checks: an **address-wrap probe** (a marker at offset 0 versus writes at each power-of-two offset - catches a chip smaller than it claims) and the **first and last word of every 1 MB region**. Everything goes through the uncached alias so the XIP cache cannot hide a fault. Watchdog keepalive every 64 KB.
+- `psram.bench` (511, swept): re-applies the SDK timing profile for the current clk_sys first (the PSRAM clock is clk_sys/divisor, so a swept test must retime) and reports the divisor, SCK, rxdelay and select times it got. Then read/write 32/8-bit at 4 KB and 64 KB, cached and uncached; single-access latency as hit / cold miss / uncached; and dependent-load latency over 16 KB (fits the cache) and 256 KB (does not).
+- `psram.copy` (512): memcpy and DMA for SRAM->PSRAM, PSRAM->SRAM and PSRAM->PSRAM at 4 KB and 64 KB.
+- `psram.timing_sweep` (513, risky): divisor 4..2 against rxdelay div-1/div/div+1, each applied with the SDK's own select/deselect maths, then verified by writing and reading back a 256 KB LFSR pattern. Records stable or the number of bad words, and always restores the default profile and proves it works.
+- `qmi.conflict` (520): the cartridge-relevant one. Flash cold-miss latency and flash streaming read, alone and while DMA hammers PSRAM; then PSRAM streaming while DMA reads flash. Reports slowdowns, worst cases, and the DMA words actually moved.
+
+**Notes**
+- PSRAM is initialised by `psram.detect` in phase 3; these tests re-check `g_psram.present` because a crash-resume does not repeat the detection stage.
+- The SDK's `psram_initialize_internal` is RAM-resident, so reconfiguring the PSRAM window is safe from flash-resident code (that is what the SDK's own boot path does).
+
+**Hardware verification to do**
+- First on a board *without* PSRAM (all stages N/A, run unaffected), then on the WeAct once the chip is fitted: detection in HARDWARE.TXT, zero integrity errors, the timing sweep table, and above all `qmi.conflict` - whether PSRAM traffic stretches the worst-case flash miss.
+
+---
+
 ## 2026-09-20 — Phase 5: flash, XIP and cache
 
 **Done**

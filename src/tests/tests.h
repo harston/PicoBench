@@ -40,6 +40,13 @@ test_result_t test_flash_copy_to_sram(test_ctx_t *ctx);
 test_result_t test_flash_write_scratch(test_ctx_t *ctx);
 test_result_t test_flash_xip_mode_sweep(test_ctx_t *ctx);
 
+// psram_integrity.c, psram_bench.c, qmi_conflict.c - PSRAM (RP2350 with a chip fitted)
+test_result_t test_psram_integrity(test_ctx_t *ctx);
+test_result_t test_psram_bench(test_ctx_t *ctx);
+test_result_t test_psram_copy(test_ctx_t *ctx);
+test_result_t test_psram_timing_sweep(test_ctx_t *ctx);
+test_result_t test_qmi_conflict(test_ctx_t *ctx);
+
 // selftest.c - infrastructure self-checks
 test_result_t test_timing_counter(test_ctx_t *ctx);
 test_result_t test_clocks_readback(test_ctx_t *ctx);

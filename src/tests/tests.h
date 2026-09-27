@@ -17,6 +17,7 @@ test_result_t test_inv_usb(test_ctx_t *ctx);
 test_result_t test_flash_identify(test_ctx_t *ctx);
 test_result_t test_flash_interface(test_ctx_t *ctx);
 test_result_t test_psram_detect(test_ctx_t *ctx);
+test_result_t test_inv_pins(test_ctx_t *ctx);
 
 // cpu.c - CPU benchmarks
 test_result_t test_cpu_integer(test_ctx_t *ctx);

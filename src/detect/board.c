@@ -6,19 +6,21 @@
 
 #define MB (1024u * 1024u)
 
+int8_t g_vsys_divider = -1;
+
 static const board_profile_t s_weact = {
-    "WeAct Studio RP2350B Core", "RP2350B (QFN80) with 16 MB flash", 25, 23, 0};
+    BOARD_WEACT_RP2350B, "WeAct Studio RP2350B Core", "RP2350B (QFN80) with 16 MB flash", 25, 23, 0};
 static const board_profile_t s_rp2350b = {
-    "RP2350B board (not the WeAct flash size)", "RP2350B, flash size does not match a known board", 25, 23, 0};
+    BOARD_RP2350B_OTHER, "RP2350B board (not the WeAct flash size)", "RP2350B, flash size does not match a known board", 25, 23, 0};
 static const board_profile_t s_pico2 = {
-    "Raspberry Pi Pico 2", "RP2350A (QFN60) with 4 MB flash", 25, -1, -1};
+    BOARD_PICO2, "Raspberry Pi Pico 2", "RP2350A (QFN60) with 4 MB flash", 25, -1, -1};
 static const board_profile_t s_rp2350a = {
-    "Pico 2 compatible board / clone (RP2350A)", "RP2350A with a flash size other than the Pico 2's 4 MB",
+    BOARD_RP2350A_OTHER, "Pico 2 compatible board / clone (RP2350A)", "RP2350A with a flash size other than the Pico 2's 4 MB",
     25, -1, -1};
 static const board_profile_t s_pico = {
-    "Raspberry Pi Pico", "RP2040 with 2 MB flash", 25, -1, -1};
+    BOARD_PICO, "Raspberry Pi Pico", "RP2040 with 2 MB flash", 25, -1, -1};
 static const board_profile_t s_rp2040_big = {
-    "RP2040 board with large flash (e.g. purple Pico clone)", "RP2040 with more than 2 MB flash", 25, -1, -1};
+    BOARD_RP2040_OTHER, "RP2040 board with large flash (e.g. purple Pico clone)", "RP2040 with more than 2 MB flash", 25, -1, -1};
 
 const board_profile_t *board_profile(void) {
     uint32_t flash = flash_layout()->flash_size;

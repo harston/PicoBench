@@ -209,6 +209,16 @@ boot tests again):
   only ~21 %. For the cartridge: keep critical code and tables in SRAM and keep PSRAM
   traffic out of time-critical windows.
 
+### Pin map (`core.pins`, HARDWARE.TXT)
+
+Lists the bank-0 GPIOs taken on the detected board and the free ones, from detection
+rather than a fixed table. QSPI (flash and PSRAM data/clock), USB, SWD and RUN use
+dedicated pads and cost no GPIO. The PSRAM chip select is reported as taken only when a
+chip answered - and then it is taken for good: **with a PSRAM fitted, its CS pin must
+stay HIGH even if the firmware never uses the PSRAM**, because a low level selects the
+chip on the QSPI bus it shares with flash. Pins 23/24/29 are claimed only for genuine
+Pico / Pico 2 layouts; clones get a warning with the measured VSYS divider as evidence.
+
 ### Board facts learned on hardware
 
 - WeAct RP2350B: RP2350-A3 silicon, boot ROM 4. Flash JEDEC `20 40 18` (XMC XM25QH128

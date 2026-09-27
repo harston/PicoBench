@@ -28,6 +28,9 @@ const test_desc_t g_tests[] = {
      test_flash_interface},
     {500, SUBSYS_PSRAM, CHIP_RP2350, INV | TF_RISKY, "psram.detect",
      "PSRAM auto-detection on every XIP_CS1 GPIO, init and sanity check", test_psram_detect},
+    // After psram.detect and core.environment: uses what they found.
+    {117, SUBSYS_GPIO, CHIP_ALL, INV, "core.pins",
+     "Pins taken on this board, and pins free for your own hardware", test_inv_pins},
     {910, SUBSYS_USB, CHIP_ALL, INV, "usb.config", "USB device configuration", test_inv_usb},
 
     // ---- Self-checks ----------------------------------------------------------------------

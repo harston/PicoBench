@@ -9,7 +9,19 @@
 #ifndef PICOBENCH_BOARD_H
 #define PICOBENCH_BOARD_H
 
+#include <stdint.h>
+
+typedef enum {
+    BOARD_WEACT_RP2350B,
+    BOARD_RP2350B_OTHER,
+    BOARD_PICO2,            // Raspberry Pi reference design
+    BOARD_RP2350A_OTHER,    // Pico 2 compatible / clone
+    BOARD_PICO,             // Raspberry Pi reference design
+    BOARD_RP2040_OTHER,     // e.g. purple clone
+} board_kind_t;
+
 typedef struct {
+    board_kind_t kind;
     const char *name;
     const char *basis;       // why this profile was chosen
     unsigned led_pin;
@@ -18,5 +30,10 @@ typedef struct {
 } board_profile_t;
 
 const board_profile_t *board_profile(void);
+
+// Whether a Pico-style VSYS/3 divider was measured on GPIO29 by core.environment:
+// -1 = not measured (RP2350B, or the test has not run), 0 = absent, 1 = present.
+// Tells a genuine Pico/Pico 2 layout apart from a clone that only looks like one.
+extern int8_t g_vsys_divider;
 
 #endif

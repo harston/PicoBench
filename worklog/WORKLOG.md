@@ -4,6 +4,22 @@ Newest entry first. Each entry: what was done, decisions, hardware results, open
 
 ---
 
+## 2026-09-27 — Pin map in HARDWARE.TXT
+
+**Question from the user**: can GPIO0 be used on the WeAct RP2350B with PSRAM fitted?
+- No. GPIO0 is the PSRAM chip select (XIP_CS1, confirmed by `probe_gpio0: MFID 0d KGD 5d`). With PSRAM in use QMI drives it on every access. With the chip fitted but unused it still must be held HIGH: a low level selects the PSRAM on the QSPI bus it shares with flash, and flash traffic could then make it drive the shared data lines. Only a board without the chip frees GPIO0.
+- For an Atari 2600 cartridge (~24 pins: 13 address, 8 data, control) the RP2350B's remaining 45 GPIOs are ample.
+
+**Added** `core.pins` (117, TF_INVENTORY, runs after `psram.detect` and `core.environment`), in `src/detect/pins.c`:
+- GPIO count per package, ADC-capable pins (26-29 / 40-47), and a note that QSPI, USB, SWD and RUN have dedicated pads.
+- Taken pins with the reason: the LED (a permanent load), KEY GPIO23 on RP2350B, the PSRAM CS **only if a chip answered** (with the "hold it HIGH" warning), and GPIO 23/24/29 only for genuine Pico / Pico 2 layouts (29 only if the VSYS divider was actually measured).
+- Clones get a warning instead of assumptions, with the measured VSYS divider as evidence (the black RP2350A clone had none).
+- A PSRAM footprint without a chip is reported as "free now, becomes the chip select if a chip is fitted".
+- A compact free-pin list, e.g. WeAct + PSRAM: `1-22, 24, 26-47`; Pico 2: `0-22, 26-28` (range formatting checked on the host).
+- Supporting changes: `board_profile_t` gained a `kind` field, and `core.environment` now stores the VSYS divider result in `g_vsys_divider`.
+
+---
+
 ## 2026-09-21 — Phase 8: PIO, GPIO, DMA, multicore, interrupts
 
 **Done** (12 tests, ids 700-741; the registry now holds 52 tests, 96 stages with the sweeps)

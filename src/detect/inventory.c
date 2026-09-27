@@ -260,8 +260,10 @@ test_result_t test_inv_environment(test_ctx_t *ctx) {
         uint32_t v = adc_avg(3);
         uint32_t mv = v * 3300u * 3u / 4096u;
         rec_value(ctx, "vsys_if_pico_divider", UNIT_MV, mv);
-        rec_text(ctx, "vsys_note", "%s", mv > 3000 && mv < 5600 ? "plausible VSYS: Pico-style VSYS/3 divider present"
-                                                                  : "no Pico-style VSYS divider on GPIO29");
+        bool divider = mv > 3000 && mv < 5600;
+        g_vsys_divider = divider ? 1 : 0;
+        rec_text(ctx, "vsys_note", "%s", divider ? "plausible VSYS: Pico-style VSYS/3 divider present"
+                                                 : "no Pico-style VSYS divider on GPIO29");
     }
     return TR_PASS;
 }

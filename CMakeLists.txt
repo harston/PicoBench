@@ -78,6 +78,7 @@ add_executable(picobench
     src/detect/board.c
     src/detect/flash_info.c
     src/detect/inventory.c
+    src/detect/pins.c
     src/detect/psram_detect.c
     src/storage/flash_layout.c
     src/storage/results_store.c

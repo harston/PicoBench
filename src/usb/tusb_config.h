@@ -1,4 +1,5 @@
-// TinyUSB configuration: composite device, CDC console + read-only MSC report disk.
+// TinyUSB configuration: composite device, CDC console + MSC report disk
+// (host writes go to a RAM overlay, see msc_disk.c).
 #ifndef _TUSB_CONFIG_H_
 #define _TUSB_CONFIG_H_
 

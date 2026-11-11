@@ -5,6 +5,7 @@
 #include <string.h>
 
 #include "pico.h"
+#include "core/clocks_ctl.h"
 #include "core/sequencer.h"
 #include "picobench_version.h"
 #include "results/crc32.h"
@@ -12,9 +13,13 @@
 // Sized for a full run: phase 4 alone produces several hundred records, and the
 // sweeps multiply the ones flagged TF_SWEEP by the number of operating points.
 // Phase 7 filled 53 KB of the RP2040's 64 KB arena; phase 8 adds another dozen tests,
-// several of them swept over five operating points.
+// several of them swept over five operating points (results_7: 79.7 of 96 KB). The
+// RP2040's 150 and 200 MHz points add ~8 KB each (results_9: 96.3 of 99.75 KB). The
+// extra 3840 + 16384 bytes come from flash.write_scratch's static buffer and the hot
+// path's address list, both now in g_bench_samples, so the free SRAM the tests work in
+// is unchanged. rec_text() also no longer repeats notes at other operating points.
 #if PICO_RP2040
-#define ARENA_BYTES (96 * 1024)
+#define ARENA_BYTES (96 * 1024 + 3840 + 16384)
 #else
 #define ARENA_BYTES (160 * 1024)
 #endif
@@ -141,6 +146,18 @@ void rec_value(test_ctx_t *ctx, const char *key, rec_unit_t unit, int64_t value)
     finish(r);
 }
 
+// A text record identical (test, key, value) to one already recorded at another
+// operating point. Swept tests write the same notes at every point; at the default point
+// they are always kept.
+static bool text_already_recorded(uint16_t test_id, uint8_t op, const char *key, const char *value) {
+    for (const rec_hdr_t *h = record_next(NULL); h; h = record_next(h)) {
+        if (h->type != REC_TEXT || h->test_id != test_id || h->op == op) continue;
+        const rec_text_t *t = (const rec_text_t *)h;
+        if (strncmp(t->key, key, REC_LABEL_LEN - 1) == 0 && strcmp(t->value, value) == 0) return true;
+    }
+    return false;
+}
+
 void rec_text(test_ctx_t *ctx, const char *key, const char *fmt, ...) {
     char buf[160];
     va_list ap;
@@ -148,6 +165,7 @@ void rec_text(test_ctx_t *ctx, const char *key, const char *fmt, ...) {
     int n = vsnprintf(buf, sizeof(buf), fmt, ap);
     va_end(ap);
     if (n < 0) return;
+    if (ctx->op != clocks_default_op() && text_already_recorded(ctx->test->id, ctx->op, key, buf)) return;
     size_t vlen = strlen(buf) + 1;
     rec_text_t *r = alloc(REC_TEXT, (uint32_t)(sizeof(*r) + vlen), ctx->test->id, ctx->op, UNIT_NONE);
     if (!r) return;

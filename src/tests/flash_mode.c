@@ -210,7 +210,8 @@ test_result_t test_flash_xip_mode_sweep(test_ctx_t *ctx) {
     }
     rec_text(ctx, "quad_note", "quad modes need the QE bit set in the flash status register. "
                                "This test never writes to the chip, so a board whose QE is clear "
-                               "reports the quad modes as unusable.");
+                               "reports the quad modes as unusable; flash.quad_enable (431) "
+                               "tries them with QE set.");
     return TR_PASS;
 }
 

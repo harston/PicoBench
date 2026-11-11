@@ -300,10 +300,32 @@ test_result_t test_inv_clock_sources(test_ctx_t *ctx) {
     rec_text(ctx, "pll_usb", "ref/%lu x%lu /%lu/%lu = VCO %lu kHz -> %lu kHz%s", (unsigned long)rb.usb_pll.refdiv,
              (unsigned long)rb.usb_pll.fbdiv, (unsigned long)rb.usb_pll.postdiv1, (unsigned long)rb.usb_pll.postdiv2,
              (unsigned long)rb.usb_pll.vco_khz, (unsigned long)rb.usb_pll.out_khz, rb.usb_pll.locked ? "" : " NOT LOCKED");
-    rec_text(ctx, "operating_points", "%lu %lu %lu %lu %lu MHz (default %lu)",
-             (unsigned long)(clocks_op_khz(0) / 1000), (unsigned long)(clocks_op_khz(1) / 1000),
-             (unsigned long)(clocks_op_khz(2) / 1000), (unsigned long)(clocks_op_khz(3) / 1000),
-             (unsigned long)(clocks_op_khz(4) / 1000), (unsigned long)(clocks_op_khz(clocks_default_op()) / 1000));
+    char ops[96];
+    int n = 0;
+    uint32_t high_mv = 0;
+    const uint32_t def_mv = clocks_op_vreg_mv(clocks_default_op());
+    for (unsigned op = 0; op < clocks_op_count() && n < (int)sizeof(ops); op++) {
+        bool high = clocks_op_vreg_mv(op) != def_mv;
+        if (high) high_mv = clocks_op_vreg_mv(op);
+        n += snprintf(ops + n, sizeof(ops) - (size_t)n, "%s%lu%s", op ? " " : "",
+                      (unsigned long)(clocks_op_khz(op) / 1000), high ? "*" : "");
+    }
+    if (high_mv) {
+        rec_text(ctx, "operating_points", "%s MHz (default %lu; core supply %lu mV, * = %lu mV)", ops,
+                 (unsigned long)(clocks_op_khz(clocks_default_op()) / 1000), (unsigned long)def_mv,
+                 (unsigned long)high_mv);
+    } else {
+        rec_text(ctx, "operating_points", "%s MHz (default %lu; core supply %lu mV)", ops,
+                 (unsigned long)(clocks_op_khz(clocks_default_op()) / 1000), (unsigned long)def_mv);
+    }
+    rec_value(ctx, "vreg", UNIT_MV, clocks_vreg_mv());
+    rec_value(ctx, "vreg_at_boot", UNIT_MV, clocks_boot_vreg_mv());
+    if (clocks_boot_vreg_mv() != clocks_op_vreg_mv(clocks_default_op())) {
+        rec_text(ctx, "vreg_note", "the chip came up with %lu mV, not the default: a watchdog reset does "
+                                   "not reset the regulator (an overclocking step that hung?). Set back "
+                                   "to the default before anything ran.",
+                 (unsigned long)clocks_boot_vreg_mv());
+    }
     return TR_PASS;
 }
 

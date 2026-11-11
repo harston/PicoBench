@@ -74,18 +74,20 @@ static void write_header(sink_t *o) {
 
 static void write_oppoints(sink_t *o) {
     sink_puts(o, "Operating points (measured by the frequency counter)\n");
-    sink_puts(o, "  op  req MHz   clk_sys   clk_ref  clk_peri   clk_usb   clk_adc  PLL_SYS ref/fb/pd1/pd2  flash div  LED Hz\n");
+    sink_puts(o, "  op  req MHz   clk_sys   clk_ref  clk_peri   clk_usb   clk_adc  PLL_SYS ref/fb/pd1/pd2  "
+                 "flash div/rx  VREG mV  LED Hz\n");
     for (const rec_hdr_t *h = record_next(NULL); h; h = record_next(h)) {
         if (h->type != REC_OPPOINT) continue;
         const rec_oppoint_t *r = (const rec_oppoint_t *)h;
         char led[16];
         fmt_milli(led, sizeof(led), r->led_blink_mhz);
-        sink_printf(o, "  %2u  %7lu  %8lu  %8lu  %8lu  %8lu  %8lu  %3lu/%3lu/%lu/%lu  %9lu  %6s%s\n",
+        sink_printf(o, "  %2u  %7lu  %8lu  %8lu  %8lu  %8lu  %8lu  %3lu/%3lu/%lu/%lu  %9lu/%-2lu  %7lu  %6s%s\n",
                     h->op, (unsigned long)(r->requested_khz / 1000), (unsigned long)r->sys_khz,
                     (unsigned long)r->ref_khz, (unsigned long)r->peri_khz, (unsigned long)r->usb_khz,
                     (unsigned long)r->adc_khz, (unsigned long)r->pll_sys_refdiv,
                     (unsigned long)r->pll_sys_fbdiv, (unsigned long)r->pll_sys_pd1,
-                    (unsigned long)r->pll_sys_pd2, (unsigned long)r->flash_if_div, led,
+                    (unsigned long)r->pll_sys_pd2, (unsigned long)r->flash_if_div,
+                    (unsigned long)r->flash_if_rxdelay, (unsigned long)r->vreg_mv, led,
                     r->ok ? "" : "  (FAILED TO SET)");
     }
     sink_puts(o, "  (clock values in kHz)\n\n");

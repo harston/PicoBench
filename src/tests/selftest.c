@@ -81,8 +81,14 @@ test_result_t test_clocks_readback(test_ctx_t *ctx) {
     rec_value(ctx, "pll_sys_out_khz", UNIT_KHZ, rb.sys_pll.out_khz);
     rec_value(ctx, "sys_deviation", UNIT_PPM, dev);
     rec_value(ctx, "flash_if_div", UNIT_COUNT, rb.flash_if_div);
+    rec_value(ctx, "flash_if_rxdelay", UNIT_COUNT, rb.flash_if_rxdelay);
+    rec_value(ctx, "vreg", UNIT_MV, rb.vreg_mv);
 
     test_result_t res = TR_PASS;
+    if (rb.vreg_mv != clocks_op_vreg_mv(ctx->op)) {
+        rec_error(ctx, "vreg_mv", 0, clocks_op_vreg_mv(ctx->op), rb.vreg_mv);
+        res = TR_FAIL;
+    }
     // Frequency counter resolution is ~1 kHz; allow 0.2 % (e.g. 300 kHz at 150 MHz).
     if (abs(dev) > 2000) {
         rec_error(ctx, "sys_khz_measured", 0, req, rb.sys_khz);

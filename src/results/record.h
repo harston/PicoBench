@@ -130,6 +130,8 @@ typedef struct {
     uint32_t flash_if_reg;
     uint32_t flash_if_div;
     uint32_t led_blink_mhz;
+    uint32_t vreg_mv;          // core supply setting at this point
+    uint32_t flash_if_rxdelay; // RP2040 RX_SAMPLE_DLY (cycles), RP2350 RXDELAY (half cycles)
     bool ok;
 } rec_oppoint_t;
 

@@ -1,0 +1,332 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Board Comparison</title>
+<style>
+:root {
+  color-scheme: light;
+  --surface: #fcfcfb; --surface-2: #f3f2ef; --grid: #e4e3df; --border: #dddcd7;
+  --text: #0b0b0b; --text-2: #52514e; --text-3: #75746f; --accent: #1c5cab;
+  --s1: #2a78d6; --s2: #eb6834; --s3: #1baf7a;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --surface: #1a1a19; --surface-2: #232321; --grid: #2f2f2c; --border: #3a3a37;
+    --text: #f0efec; --text-2: #c3c2b7; --text-3: #9a998f; --accent: #86b6ef;
+    --s1: #3987e5; --s2: #d95926; --s3: #199e70;
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --surface: #1a1a19; --surface-2: #232321; --grid: #2f2f2c; --border: #3a3a37;
+  --text: #f0efec; --text-2: #c3c2b7; --text-3: #9a998f; --accent: #86b6ef;
+  --s1: #3987e5; --s2: #d95926; --s3: #199e70;
+}
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0; background: var(--surface); color: var(--text);
+  font: 16px/1.55 system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+}
+main { max-width: 1040px; margin: 0 auto; padding: 32px 16px 64px; }
+h1 { font-size: 2rem; line-height: 1.2; margin: 0 0 12px; }
+h2 { font-size: 1.4rem; margin: 48px 0 12px; padding-top: 8px; border-top: 1px solid var(--border); }
+h3 { font-size: 1.1rem; margin: 32px 0 8px; }
+p, li { color: var(--text); max-width: 78ch; }
+p { margin: 0 0 14px; }
+a { color: var(--accent); }
+code { font: 0.9em ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; background: var(--surface-2);
+       padding: 1px 4px; border-radius: 4px; }
+strong { font-weight: 650; }
+ol, ul { padding-left: 1.4em; margin: 0 0 16px; }
+li { margin: 4px 0; }
+.table-wrap { overflow-x: auto; margin: 0 0 18px; border: 1px solid var(--border); border-radius: 8px; }
+table { border-collapse: collapse; width: 100%; font-size: 0.875rem; font-variant-numeric: tabular-nums; }
+th, td { text-align: left; vertical-align: top; padding: 7px 10px; border-bottom: 1px solid var(--grid); }
+thead th { background: var(--surface-2); color: var(--text-2); font-weight: 600; }
+tbody tr:last-child td { border-bottom: 0; }
+td:first-child { color: var(--text); font-weight: 500; }
+.chart { margin: 8px 0 28px; padding: 16px; border: 1px solid var(--border); border-radius: 8px; }
+figcaption { display: flex; flex-direction: column; gap: 2px; margin-bottom: 8px; }
+.chart-title { font-weight: 650; }
+.chart-sub { color: var(--text-2); font-size: 0.875rem; }
+.legend { list-style: none; display: flex; flex-wrap: wrap; gap: 6px 18px; padding: 0; margin: 0 0 8px;
+          font-size: 0.85rem; color: var(--text-2); }
+.legend li { display: flex; align-items: center; gap: 6px; margin: 0; }
+.swatch { width: 12px; height: 12px; border-radius: 3px; display: inline-block; }
+.s1 { background: var(--s1); } .s2 { background: var(--s2); } .s3 { background: var(--s3); }
+.plot { position: relative; width: 100%; }
+.plot svg { display: block; width: 100%; overflow: visible; }
+.plot text { font-family: inherit; }
+.mark { cursor: default; outline: none; }
+.mark:focus-visible .hit { stroke: var(--text); stroke-width: 1.5; }
+.tip { position: absolute; pointer-events: none; background: var(--surface); color: var(--text);
+       border: 1px solid var(--border); border-radius: 6px; padding: 6px 9px; font-size: 0.8rem;
+       box-shadow: 0 2px 10px rgba(0,0,0,.12); white-space: nowrap; display: none; z-index: 2; }
+.tip b { font-weight: 650; }
+.foot { color: var(--text-3); font-size: 0.8rem; margin-top: 40px; }
+</style>
+</head>
+<body>
+<main>
+<h1>PicoBench board comparison</h1>
+<p>Three boards measured with PicoBench: a Raspberry Pi Pico (RP2040) clone, a Pico 2 (RP2350A) clone and a WeAct RP2350B Core with PSRAM. The comparison covers CPU, SRAM, flash/XIP in every read mode the chips offer (serial, dual, quad, with and without the command byte, three flash clocks), PSRAM, the Atari cartridge "hot path", peripherals, and how all of it scales with the system clock from 48 to 200 MHz. A last section shows how far each chip goes outside its specification (overclocking run).</p>
+<p>The same comparison as Markdown: <a href="board-comparison.md">board-comparison.md</a>.</p>
+<p>All timings are <strong>internal</strong>: CPU and bus cycles counted by the chip itself (SysTick on the M0+, DWT CYCCNT on the M33, <code>mcycle</code> on Hazard3). Electrical timing (rise time, PCB propagation, input thresholds) is not measured. Latencies are reported as p50 / p99.9 / max over the stated samples; "cyc" = clk_sys cycles.</p>
+<h2 id="the-boards">The boards</h2>
+<div class="table-wrap"><table><thead><tr><th></th><th><strong>RP2040</strong> (purple Pico clone)</th><th><strong>RP2350A</strong> (black Pico 2 clone)</th><th><strong>RP2350B</strong> (WeAct Core + PSRAM)</th></tr></thead><tbody><tr><td>Silicon</td><td>RP2040-B2</td><td>RP2350-A2</td><td>RP2350-A3</td></tr><tr><td>Package / GPIO</td><td>QFN56 / 30</td><td>QFN60 / 30</td><td>QFN80 / 48</td></tr><tr><td>Cores measured</td><td>2x Cortex-M0+</td><td>2x Cortex-M33 or 2x Hazard3 (RISC-V)</td><td>2x Cortex-M33 or 2x Hazard3</td></tr><tr><td>SRAM / DMA channels / PIO blocks</td><td>264 KB / 12 / 2</td><td>520 KB / 16 / 3</td><td>520 KB / 16 / 3</td></tr><tr><td>Flash</td><td>16 MB <strong>Boya</strong> (JEDEC 68 40 18, SFDP 1.6)</td><td>16 MB <strong>Boya</strong> (68 40 18, older revision, SFDP 1.0)</td><td>16 MB <strong>XMC</strong> (20 40 18, SFDP 1.6)</td></tr><tr><td>Flash read mode at boot</td><td>quad, <strong>continuous read</strong> (boot stage 2), SCK = clk_sys / 2</td><td><strong>dual</strong> 1-2-2 (0xBB) with command byte, QE bit clear, SCK = clk_sys / 3</td><td><strong>quad</strong> 1-4-4 (0xEB) with command byte, SCK = clk_sys / 3</td></tr><tr><td>PSRAM</td><td>none</td><td>none</td><td>AP Memory APS6404, 8 MB, CS = GPIO0</td></tr><tr><td>Clocks tested (default)</td><td>48 / 96 / 120 / <strong>125</strong> / 133 / 150* / 200* MHz</td><td>48 / 96 / 120 / 133 / <strong>150</strong> MHz</td><td>48 / 96 / 120 / 133 / <strong>150</strong> MHz</td></tr><tr><td>Boot ROM version</td><td>3</td><td>2</td><td>4</td></tr></tbody></table></div>
+<p>* At 1.15 V core supply. The RP2040 has been rated up to 200 MHz at 1.15 V since Pico SDK 2.1; every other point runs at the default 1.10 V.</p>
+<p>Except in the last section, every operating point is within the chip's rated maximum, and the real clock and core voltage were read back at each point.</p>
+<p><strong>Data</strong>: PicoBench firmware 0.0.1+9f87c89, one board of each kind (plus a second RP2040 board for the last runs), room temperature.</p>
+<ul><li><strong>Main runs.</strong> RP2040: build 7e194a34 (2026-11-06). RP2350A and RP2350B on the M33: build 425991b6 (2026-11-06). RP2350B on Hazard3: build 7f0ad49e (2026-11-06).</li><li><strong>RP2350A on Hazard3.</strong> Build 906d2ad9 (2026-10-02), from before the cold-miss measurement fix, so its flash-miss figure is not used. On everything else it matches the RP2350B Hazard3 run to within 1-2 cycles.</li><li><strong>Limits within specification.</strong> Build b6f94055 (RP2040: 150 and 200 MHz) and 80ea42b1 (RP2350 M33), 2026-11-06. These runs measured the fastest flash and PSRAM clock at every operating point.</li><li><strong>Overclocking.</strong> RP2040: builds ec2091cb, 0a37c20c and c17c8e33. RP2350 M33: 35e0ef24, ea1013ce and 65e684f0. Hazard3: 6e9e2e7d, 5ac2d91a and 39a7cf7a.</li><li><strong>Corrected measurements, 2026-11-07.</strong> RP2040: builds fda610e7 and 7f5fd1b7. RP2350B on the M33: builds c4d1438f and e987cf0f. RP2350A on the M33: build e987cf0f. The PSRAM and flash sampling loops moved to SRAM, and the flash DMA in the QMI conflict test now reads the uncached alias. The RP2040 overclocking run with the flash probe used build fa092ba5.</li><li><strong>Phase-swept SRAM contention and full-walk PSRAM chase, 2026-11-11.</strong> RP2040: builds 912a6bda and bea4ca63, on a second purple board of the same type (its cycle counts match the first board's in 931 of 999 figures). RP2350A and RP2350B on the M33: build d952e340. All other figures of these runs match the earlier runs.</li></ul>
+<p>Every run outside the overclocking section completed all stages with OVERALL PASS and no errors.</p>
+<h2 id="headline-numbers">Headline numbers</h2>
+<p>At each board's default clock (RP2040 125 MHz, RP2350 150 MHz). Where the RP2350 has two figures, they are Cortex-M33 / Hazard3.</p>
+<div class="table-wrap"><table><thead><tr><th></th><th>RP2040</th><th>RP2350A</th><th>RP2350B</th></tr></thead><tbody><tr><td>Cartridge hot path, table and code in SRAM (p50 / max)</td><td>33 / 40 cyc = 264 / 320 ns</td><td>20 / 23 cyc = <strong>133 / 153 ns</strong>; H3 18 / 19 cyc = 120 / 127 ns</td><td>same as RP2350A</td></tr><tr><td>Flash cache miss, boot read mode</td><td>53 cyc = <strong>0.42 us</strong></td><td>173 cyc = <strong>1.15 us</strong></td><td>113 cyc = <strong>0.75 us</strong></td></tr><tr><td>Flash cache miss, best setting tested</td><td>53 cyc at 200 MHz = <strong>0.27 us</strong> (SCK 100 MHz)**</td><td>34 cyc at 133 MHz = <strong>0.26 us</strong> (quad, continuous read, SCK 133 MHz); 62 cyc = 0.41 us at 150 MHz</td><td>same as RP2350A</td></tr><tr><td>Uncached flash read, boot mode / best tested</td><td>9.6 / 15.3 MB/s (200 MHz)</td><td>7.2 / 24.9 MB/s</td><td>11.0 / 24.9 MB/s</td></tr><tr><td>SRAM dependent load</td><td>3.52 cyc (28 ns)</td><td>2.26 cyc (15 ns); H3 3.01 cyc (20 ns)</td><td>same as RP2350A</td></tr><tr><td>SRAM sequential 32-bit read</td><td>142 MB/s</td><td>239 MB/s; H3 265 MB/s</td><td>same as RP2350A</td></tr><tr><td>DMA copy, 16 KB SRAM to SRAM</td><td>496 MB/s</td><td>597 MB/s</td><td>597 MB/s</td></tr><tr><td>SRAM read while a DMA copy runs in the same banks</td><td>+36 %</td><td><strong>+4 %</strong> (other bank group: 0 %)</td><td>same as RP2350A</td></tr><tr><td>Software interrupt entry (p50 / max)</td><td>25 / 428 cyc</td><td>25 / 1044-1310 cyc***; H3 45 / 698</td><td>25 / 624-818 cyc***; H3 45 / 383</td></tr><tr><td>ARM (Thumb) interpreter, cycles per guest instruction</td><td>42.3</td><td>28.2; H3 24.5</td><td>28.2; H3 24.4</td></tr><tr><td>PSRAM uncached read / cache miss</td><td>-</td><td>-</td><td>55 / 66 cyc (0.37 / 0.44 us); best 33 cyc = <strong>0.25 us</strong> (133 MHz, divisor 1)</td></tr><tr><td>Highest clock in the overclocking run (1.30 V, outside spec)</td><td>420 MHz confirmed, 432-450 passed</td><td>~320 MHz at any voltage</td><td>412 MHz (M33) / 420 MHz (Hazard3) confirmed</td></tr></tbody></table></div>
+<p>** The miss itself is measured at the default clock only. The cycle count does not change with the clock at a fixed divider: the hot path's cold flash fetch stays at 84 cycles at 200 MHz.</p>
+<p>*** The maximum is the handler's first run, fetched cold from flash. It changes with the code layout: 1044 or 1310 cycles on the RP2350A and 624 or 818 on the RP2350B in the M33 builds from results_8 to results_15. The ratio between the boards (dual vs quad flash) stays 1.6x.</p>
+<p>In clock cycles the two RP2350 boards are <strong>identical</strong> in everything that does not touch flash. Every difference between them comes from the flash read mode the boot ROM leaves behind, and that turns out to be configurable (see below).</p>
+<h2 id="cpu">CPU</h2>
+<p>Cycles per operation, independent of the clock (identical at all five operating points and on both RP2350 boards).</p>
+<div class="table-wrap"><table><thead><tr><th></th><th>Cortex-M0+ (RP2040)</th><th>Cortex-M33 (RP2350)</th><th>Hazard3 (RP2350)</th></tr></thead><tbody><tr><td>add / and-or / shift, 32-bit</td><td>1.00</td><td>1.00</td><td><strong>0.88</strong></td></tr><tr><td>multiply, 32-bit (dependent chain)</td><td>1.00</td><td>1.88</td><td><strong>0.88</strong></td></tr><tr><td>divide, 32-bit</td><td>33.0 (no divide instruction)</td><td><strong>4.0</strong></td><td>19.9</td></tr><tr><td>empty loop iteration</td><td>4.06</td><td>3.04</td><td>3.04</td></tr><tr><td>predictable branch, per iteration</td><td>7.0</td><td>7.0</td><td><strong>6.0</strong></td></tr><tr><td>data-dependent branches vs predictable (same loop)</td><td>1.71x</td><td>1.43x</td><td><strong>1.33x</strong></td></tr><tr><td>memcpy 4 KB, cycles per byte</td><td>0.83</td><td>0.89</td><td><strong>0.63</strong></td></tr><tr><td>memset 4 KB, cycles per byte</td><td>0.52</td><td>0.52</td><td><strong>0.38</strong></td></tr><tr><td>CRC-32 in software (nibble table), cycles per byte</td><td>19.0</td><td>15.5</td><td><strong>14.0</strong></td></tr><tr><td>random table lookup in SRAM, cycles per lookup</td><td>15.2</td><td><strong>11.1</strong></td><td>12.1</td></tr></tbody></table></div>
+<p>Hazard3 wins integer arithmetic, branches and block copies by 12-30 %. The M33 wins division (5x) and dependent loads (lookups, pointer chasing).</p>
+<h2 id="sram">SRAM</h2>
+<div class="table-wrap"><table><thead><tr><th></th><th>RP2040</th><th>RP2350 M33</th><th>RP2350 Hazard3</th></tr></thead><tbody><tr><td>Dependent load (pointer chase, 4-64 KB)</td><td>3.52 cyc</td><td><strong>2.26 cyc</strong></td><td>3.01 cyc</td></tr><tr><td>Sequential read, 32-bit, at default clock</td><td>142 MB/s</td><td>239 MB/s</td><td><strong>265 MB/s</strong></td></tr><tr><td>Sequential write, 32-bit, at default clock</td><td>188 MB/s</td><td>367 MB/s</td><td><strong>473 MB/s</strong></td></tr><tr><td>Bank conflicts (stride 4-128 bytes)</td><td>none measurable</td><td>none measurable</td><td>none measurable</td></tr><tr><td>CPU read while DMA copies in the same bank group</td><td>+35-36 %*</td><td><strong>+4 %</strong>*</td><td>not measured</td></tr><tr><td>CPU read while DMA copies in the other bank group</td><td>(one group only)</td><td><strong>0 %</strong>*</td><td>not measured</td></tr></tbody></table></div>
+<p>* A 4 KB sequential CPU read while one DMA channel copies 16 KB of SRAM. The delay between starting the DMA and the timed read was swept over 0-127 cycles; the figures are min-max over those phases, and on the RP2350 all phases gave the same result. The DMA kept running through every sample (~0.95 words per cycle in the same group). Both RP2350 boards gave identical cycle counts (results_15), and two RP2040 boards gave 35-36 % (results_14 and 15). The earlier RP2040 "+24 %" came from one fixed phase that depended on the code layout: it read 24 % for several builds, then 36 %. On the RP2350 this test reported N/A until 2026-11-07, because it looked for free SRAM in the bank group the firmware fills.</p>
+<p>The RP2350's bus fabric shares the banks far better than the RP2040's: a DMA copy in the same bank group costs the CPU 4 % there, against 36 % on the RP2040.</p>
+<h2 id="flash-and-xip">Flash and XIP</h2>
+<h3 id="read-modes-and-flash-clock">Read modes and flash clock</h3>
+<p>Uncached 4 KB sequential read at clk_sys = 150 MHz, in MB/s. Both RP2350 boards give the same cycle counts, to the cycle, in every mode they both support. "Continuous" = the chip is put in continuous read mode, so no command byte is sent per access (as the RP2040's boot stage 2 does). Every setting was verified by reading 16 x 128 KB against checksums taken in the boot mode: <strong>no errors in any combination</strong>.</p>
+<div class="table-wrap"><table><thead><tr><th>Read mode</th><th>div 4 (SCK 37.5 MHz)</th><th>div 3 (SCK 50 MHz)</th><th>div 2 (SCK 75 MHz)</th></tr></thead><tbody><tr><td>03h serial (1-1-1)</td><td>3.3</td><td>4.3</td><td>6.2</td></tr><tr><td>0Bh fast serial (1-1-1)</td><td>3.1</td><td>4.0</td><td>5.8</td></tr><tr><td>BBh dual (1-2-2), command each access</td><td>5.5</td><td><strong>7.2</strong> (RP2350A boot mode)</td><td>10.2</td></tr><tr><td>BBh dual, continuous read</td><td>-</td><td>8.1</td><td>11.4</td></tr><tr><td>EBh quad (1-4-4), command each access</td><td>8.5</td><td><strong>11.0</strong> (RP2350B boot mode)</td><td>15.1</td></tr><tr><td>EBh quad, continuous read</td><td>-</td><td>13.1</td><td><strong>17.7</strong></td></tr></tbody></table></div>
+<p>The RP2040 reads 9.6 MB/s in its boot mode (quad, continuous read, SCK 62.5 MHz).</p>
+<p><strong>Quad on the RP2350A</strong> needs the flash's Quad Enable bit, which is clear on this board. The chip accepts a <strong>volatile</strong> QE write (50h + 31h), which is lost at power-off. With QE set, the RP2350A reads quad at exactly the WeAct's figures. Without it, quad reads return wrong data, and the boot ROM therefore picks dual. The dual-mode penalty of this board is purely that one bit.</p>
+<h3 id="cost-of-one-flash-cache-miss">Cost of one flash cache miss</h3>
+<p>A cache miss fetches one 8-byte line in one SPI frame. On the RP2350 its cost is <strong>(SCK cycles of the frame) x clock divider + ~5 cycles</strong>. The frame is command + address + mode byte + dummy + 64 data bits, each at its bus width. This model predicts every measured RP2350 figure to within 6 cycles.</p>
+<p>The RP2040 hands the word to the CPU once the first 32 data bits are in: <strong>20 SCK cycles x divider + ~13-15 cycles</strong>. That gives 53 cycles at divider 2 and 95 at divider 4, the latter measured in the overclocking run.</p>
+<div class="table-wrap"><table><thead><tr><th>Setting</th><th>Frame (SCK cycles)</th><th>Model</th><th>Measured</th><th>Time</th></tr></thead><tbody><tr><td>RP2040 boot: quad, continuous, div 2 (62.5 MHz)</td><td>0+6+2+4+8 = 20 to the first word</td><td>40 + ~13</td><td>53 cyc @125 MHz</td><td><strong>0.42 us</strong></td></tr><tr><td>RP2350A boot: dual + command, div 3</td><td>8+12+4+0+32 = 56</td><td>168</td><td>173 cyc</td><td>1.15 us</td></tr><tr><td>dual, continuous, div 3</td><td>48</td><td>144</td><td>149 cyc</td><td>0.99 us</td></tr><tr><td>dual, continuous, div 2</td><td>48</td><td>96</td><td>102 cyc</td><td>0.68 us</td></tr><tr><td>quad + command, div 4</td><td>8+6+2+4+16 = 36</td><td>144</td><td>149 cyc</td><td>0.99 us</td></tr><tr><td>RP2350B boot: quad + command, div 3</td><td>36</td><td>108</td><td>113 cyc</td><td>0.75 us</td></tr><tr><td>quad + command, div 2</td><td>36</td><td>72</td><td>78 cyc</td><td>0.52 us</td></tr><tr><td>quad, continuous, div 3</td><td>28</td><td>84</td><td>89 cyc</td><td>0.59 us</td></tr><tr><td><strong>quad, continuous, div 2</strong></td><td>28</td><td>56</td><td><strong>62 cyc</strong></td><td><strong>0.41 us</strong></td></tr></tbody></table></div>
+<figure class="chart" id="chart-miss"><figcaption><span class="chart-title">Cost of one flash cache miss</span><span class="chart-sub">Time to fetch one 8-byte line from flash, by read mode and flash clock. Lower is better.</span></figcaption><ul class="legend"><li><span class="swatch s1"></span>Board&#x27;s boot default</li><li><span class="swatch s2"></span>Tested setting (PicoBench 431-433)</li></ul><div class="plot" role="img" aria-label="Cost of one flash cache miss; the values are in the table above"></div></figure>
+<p>All RP2350 rows were measured on both boards with identical results. The RP2040 has the fastest miss of the three boards as they boot. With quad continuous read at SCK 75 MHz, both RP2350 boards match it.</p>
+<h3 id="fastest-flash-clock-per-operating-point">Fastest flash clock per operating point</h3>
+<p>PicoBench test 433 tries quad continuous read at every clock divider and every RX sample delay. Each setting is checked with 4 x 128 KB reads; the best one gets 16 x 128 KB more and is measured. Divider 1 means SCK = clk_sys. The normal firmware stops at SCK 104 MHz; 120 and 133 MHz come from the overclocking firmware, which allows up to 133 MHz. SCK above 133 MHz was never tried. Results are identical on both RP2350 boards (Boya and XMC flash) except where noted.</p>
+<div class="table-wrap"><table><thead><tr><th>clk_sys</th><th>Divider (SCK)</th><th>Working RX delays</th><th>Miss, M33 / Hazard3</th><th>Uncached 4 KB</th></tr></thead><tbody><tr><td>48 MHz</td><td>1 (48 MHz)</td><td>0-1 of 0-7</td><td>33 / 31 cyc = 688 / 646 ns</td><td>9.4 MB/s</td></tr><tr><td>96 MHz</td><td>1 (96 MHz)</td><td>1-2</td><td>34 / 32 cyc = 354 / 333 ns</td><td>18.0 MB/s</td></tr><tr><td>120 MHz</td><td>1 (120 MHz)</td><td>1-2</td><td>34 / 32 cyc = 283 / 267 ns</td><td>22.5 MB/s</td></tr><tr><td><strong>133 MHz</strong></td><td><strong>1 (133 MHz)</strong></td><td>1-2</td><td><strong>34 / 32 cyc = 256 / 241 ns</strong></td><td><strong>24.9 MB/s</strong></td></tr><tr><td>150 MHz</td><td>2 (75 MHz)</td><td>0-3 (RP2350A: 1-3)</td><td>61-62 / 59-60 cyc = 407-413 / 393-400 ns</td><td>17.7-18.3 MB/s</td></tr></tbody></table></div>
+<p>The frame model gives 28 x 1 + 5 = 33 cycles at divider 1, and the measurements are within one cycle of it. Hazard3 needs 2 cycles fewer than the M33 in every mode. <strong>The fastest flash miss on any board is 133 MHz with divider 1</strong>: 0.26 us, against 0.41 us at 150 MHz. The flash chips' own rated maximum clocks were not checked against datasheets.</p>
+<p>The RP2040 runs SSI divider 2 at every operating point (SCK up to 100 MHz at 200 MHz). Its working RX sample delays are 0-1 up to 133 MHz, <strong>only 1 at 150 MHz</strong> (SCK 75 MHz), and 1-2 at 200 MHz (SCK 100 MHz). The 150 MHz point has no RX-delay margin left: one clk_sys cycle is 6.7 ns, close to the width of the data window.</p>
+<h3 id="other-flash-figures">Other flash figures</h3>
+<div class="table-wrap"><table><thead><tr><th></th><th>RP2040</th><th>RP2350A</th><th>RP2350B</th></tr></thead><tbody><tr><td>Cache hit</td><td>10 cyc</td><td>4 cyc</td><td>4 cyc</td></tr><tr><td>Cache: 16 KB, 8-byte lines, shared with PSRAM</td><td>yes</td><td>yes</td><td>yes</td></tr><tr><td>Cached streaming, 64 KB (larger than the cache), M33 / H3</td><td>9.3 MB/s</td><td>7.4 / 11.7 MB/s</td><td>11.3 / 21.8 MB/s</td></tr><tr><td>Same loop from flash with a cold cache, overhead vs SRAM</td><td>+19 %</td><td>+57 % / +45 %</td><td>+32 % / +25 %</td></tr><tr><td>Program one 256-byte page</td><td>372 us</td><td>869 us</td><td>580 us</td></tr><tr><td>Erase one 4 KB sector (average of 4)</td><td>7-25 ms (varies between runs)*</td><td>6.8 ms</td><td>3.9 ms</td></tr></tbody></table></div>
+<p>* The RP2040's Boya flash alternates between ~0.3 ms and ~28 ms for a 4 KB erase from run to run, depending on the state the previous run left the sector in. Probably it skips erasing blank sectors.</p>
+<p>The "cold code" overhead depends on where the linker places the loop and moves by up to ~10 points between builds. Hazard3 streams cached flash about twice as fast as the M33.</p>
+<h2 id="psram-weact-rp2350b-only">PSRAM (WeAct RP2350B only)</h2>
+<p>AP Memory APS6404, 8 MB, with the SDK's default timing profile. All 8 MB passed the integrity tests, and all 9 tested divisor / RX-delay combinations were stable.</p>
+<div class="table-wrap"><table><thead><tr><th>at 150 MHz (PSRAM SCK 75 MHz)</th><th>M33</th><th>Hazard3</th></tr></thead><tbody><tr><td>Uncached single read</td><td>55 cyc (367 ns)</td><td>59 cyc*</td></tr><tr><td>Cache miss (8-byte line)</td><td>66 cyc (440 ns)</td><td>64 cyc</td></tr><tr><td>Cache hit / dependent load through the cache (8 KB)</td><td>4 / 2.25 cyc</td><td>8* / 3.05 cyc</td></tr><tr><td>Dependent load, random over 256 KB: cached / uncached</td><td>66.9 / <strong>53.1</strong> cyc</td><td>not measured</td></tr><tr><td>Uncached stream read / write</td><td>27.3 / 33.7 MB/s</td><td>27.5 / 34.2 MB/s</td></tr><tr><td>DMA: PSRAM to SRAM / SRAM to PSRAM / PSRAM to PSRAM</td><td>29.1 / 34.7 / 8.0 MB/s</td><td>same</td></tr></tbody></table></div>
+<p>* Measured with the sampling loop in flash. Its instruction fetches share the XIP port with the PSRAM access and added 4 cycles: with the loop in SRAM the M33 figures fell from 59 to 55 and from 8 to 4. The Hazard3 run was not repeated.</p>
+<p><strong>Random access to a large working set is faster uncached.</strong> The dependent-load rows walk a random cycle through every word of the working set once per sample (results_15). 8 KB fits in the 16 KB XIP cache, so every load hits. At 256 KB nearly every load misses, and a cached miss fetches a whole 8-byte line (66 cycles) where an uncached read fetches one word (55). Through the cached alias that costs 66.9 cycles per load, through the uncached alias 53.1, 21 % less. The ratio is the same at every clock (36.0 / 29.1 cycles at 48 MHz with divider 1). For tables much larger than the cache that are read at random, use the uncached alias. The earlier figure of ~3.3 cycles for "256 KB cached" walked only 256 steps (2 KB), which fit in the cache.</p>
+<p><strong>The SDK picks the PSRAM divider by clock.</strong> It uses divider 1 at 48 and 96 MHz (PSRAM SCK = clk_sys) and divider 2 from 120 MHz up. A single uncached read therefore costs 32 cycles (333 ns) at 96 MHz but 55 cycles (458 ns) at 120 MHz, and streaming is faster at 96 MHz (28.1 MB/s) than at 120 MHz (21.8 MB/s).</p>
+<p><strong>Divider 1 works up to 133 MHz</strong>, and even at 150 MHz. That is inside the APS6404's 133 MHz rating but outside the SDK's own rule, which never uses divider 1 above 100 MHz. PicoBench test 513 checked every setting with a 256 KB write/read pattern:</p>
+<div class="table-wrap"><table><thead><tr><th>clk_sys / divider</th><th>PSRAM SCK</th><th>Working RX delays</th><th>Uncached read</th><th>4 KB uncached</th></tr></thead><tbody><tr><td>150 MHz / 2 (SDK default)</td><td>75 MHz</td><td>1-4</td><td>55 cyc = 367 ns</td><td>27.3 MB/s</td></tr><tr><td>48 MHz / 1</td><td>48 MHz</td><td>0-1</td><td>30 cyc = 625 ns</td><td>14.9 MB/s</td></tr><tr><td>96 MHz / 1</td><td>96 MHz</td><td>1-2</td><td>32 cyc = 333 ns</td><td>28.1 MB/s</td></tr><tr><td>120 MHz / 1</td><td>120 MHz</td><td>1-2</td><td>33 cyc = 275 ns</td><td>35.3 MB/s</td></tr><tr><td><strong>133 MHz / 1</strong></td><td>133 MHz</td><td><strong>2 only</strong></td><td><strong>33 cyc = 248 ns</strong></td><td><strong>39.1 MB/s</strong></td></tr><tr><td>150 MHz / 1 (beyond the chip's rating)</td><td>150 MHz</td><td>2-3</td><td>36 cyc = 240 ns*</td><td>44.3 MB/s</td></tr></tbody></table></div>
+<p>* Measured with the older loop in flash, so about 4 cycles too high (about 32 cycles = 213 ns with the SRAM loop).</p>
+<p>The fastest in-spec setting is 133 MHz with divider 1: 32 % less latency and 43 % more throughput than the SDK's 150 MHz setting, despite the slower CPU. Its RX-delay window is a single value, though, so it has no margin.</p>
+<h3 id="flash-and-psram-share-one-controller">Flash and PSRAM share one controller</h3>
+<p>A flash cache miss was measured while a PSRAM DMA transfer runs. The delay between DMA start and the flash read was swept over 256 phases (0-2040 cycles), and the code ran from SRAM:</p>
+<div class="table-wrap"><table><thead><tr><th>PSRAM traffic</th><th>flash miss p50</th><th>flash miss worst</th><th>vs quiet</th></tr></thead><tbody><tr><td>none</td><td>113 cyc</td><td>113 cyc (0.75 us)</td><td>-</td></tr><tr><td>DMA read stream (PSRAM to SRAM)</td><td>129 cyc</td><td>182 cyc (1.21 us)</td><td>+61 %</td></tr><tr><td>DMA write stream (SRAM to PSRAM)</td><td>129 cyc</td><td>151 cyc (1.01 us)</td><td>+33 %</td></tr><tr><td>DMA copy (PSRAM to PSRAM)</td><td>207 cyc</td><td><strong>277 cyc (1.85 us)</strong></td><td><strong>+145 %</strong></td></tr></tbody></table></div>
+<p>The M33 and Hazard3 agree to within 4 cycles. A long PSRAM read burst does not hold the controller for its whole max-select window: the flash request waits at most ~70 cycles. Streaming collapses in both directions:</p>
+<ul><li>Cached flash streaming slows ~30x while a PSRAM copy runs (2446 to 77 422 cycles per 4 KB).</li><li>Uncached PSRAM streaming slows <strong>6.1x</strong> while a DMA reads flash through the uncached alias (22 479 to 138 125 cycles per 4 KB).</li></ul>
+<p>The earlier "PSRAM loses only ~1 %" was wrong. That DMA read the <em>cached</em> flash alias, so most of its reads were cache hits that never reached the flash controller, and the result moved with the code layout (2 % in one build, 20 % in the next).</p>
+<h2 id="cartridge-hot-path">Cartridge hot path</h2>
+<p>One emulated console bus cycle: read the address bus (SIO), decode bank and offset, fetch the byte from a 4 KB table, and write the data port (SIO). 200 000 iterations with interrupts off, unless stated otherwise. Values are p50 / p99.9 / max in cycles.</p>
+<div class="table-wrap"><table><thead><tr><th>Variant</th><th>RP2040 @125 MHz</th><th>RP2350A M33 / H3 @150 MHz</th><th>RP2350B M33 / H3 @150 MHz</th></tr></thead><tbody><tr><td>table in SRAM, code in SRAM</td><td>33 / 40 / 40</td><td>20 / 23 / 23 and 18 / 19 / 19</td><td>20 / 23 / 23 and 18 / 19 / 19</td></tr><tr><td>table in SRAM, code in flash (one cold code fetch)</td><td>33 / 40 / 743</td><td>20 / 23 / 961</td><td>20 / 23 / 553</td></tr><tr><td>table in flash, warm cache</td><td>33 / 84 / 90</td><td>20 / 200 / 201</td><td>20 / 140 / 141</td></tr><tr><td>table in flash, cold cache</td><td>84</td><td>200 / 198</td><td>140 / 138</td></tr><tr><td>table in flash, uncached</td><td>82</td><td>116 / 114</td><td>98 / 96</td></tr><tr><td>table in PSRAM, cached</td><td>-</td><td>-</td><td>20 / 87 / 88</td></tr><tr><td>table in PSRAM, uncached</td><td>-</td><td>-</td><td>59 / 57</td></tr><tr><td>SRAM table, 10 kHz timer interrupt</td><td>33 / 328 / 329-335</td><td>20 / 266 / 266-2414*</td><td>20 / 231-266 / 234-1556*</td></tr><tr><td>SRAM table, DMA copying in SRAM</td><td>34 / 41 / 41</td><td>20 / 23 / 23</td><td>20 / 23 / 23</td></tr><tr><td>SRAM table, DMA streaming PSRAM</td><td>-</td><td>-</td><td>20 / 23 / 23</td></tr><tr><td>flash table, DMA streaming PSRAM</td><td>-</td><td>-</td><td>22 / 71 / 171-203**</td></tr><tr><td>other core running the ARM interpreter (max)</td><td>45 (vs 40)</td><td>25 (vs 23)</td><td>25 (vs 23)</td></tr></tbody></table></div>
+<figure class="chart" id="chart-hotpath"><figcaption><span class="chart-title">Cartridge hot path, worst case</span><span class="chart-sub">Maximum time for one emulated bus cycle at each board&#x27;s default clock (Cortex-M33 on the RP2350). Lower is better.</span></figcaption><ul class="legend"><li><span class="swatch s1"></span>RP2040 @ 125 MHz</li><li><span class="swatch s2"></span>RP2350A @ 150 MHz</li><li><span class="swatch s3"></span>RP2350B @ 150 MHz</li></ul><div class="plot" role="img" aria-label="Cartridge hot path, worst case; the values are in the table above"></div></figure>
+<p>* The maximum is a single sample: the interrupt handler's first run, fetched cold from flash. It changes with the code layout between builds (M33 builds from results_8 to results_15); the p99.9 does not.</p>
+<p>** The main run (build 425991b6) read 21 / 150 / 199. Every later build, from 80ea42b1 on, gives a p99.9 of 70-71 cycles.</p>
+<p>The access pattern (sequential, random, bank-switching) makes no difference on any board. DMA in SRAM or on the PSRAM does not disturb an SRAM-resident hot path. Anything that reads flash or uncached PSRAM costs a full miss (previous section) in the worst case.</p>
+<h2 id="scaling-with-the-system-clock">Scaling with the system clock</h2>
+<p>The flash clock divider is fixed (RP2040: 2, RP2350: 3), so the flash SCK scales with clk_sys. On the RP2040 at 200 MHz that means SCK 100 MHz, which PicoBench verifies before keeping it. Every latency in this document is therefore <strong>the same number of cycles at every operating point</strong>, and its time in nanoseconds scales as 1/f. The one exception is PSRAM, whose divider the SDK changes at 120 MHz (see above).</p>
+<p>Hot path p50 in nanoseconds (cycles in brackets):</p>
+<div class="table-wrap"><table><thead><tr><th>clk_sys</th><th>RP2040 SRAM (33)</th><th>RP2040 flash cold (84)</th><th>RP2350 SRAM, M33 (20)</th><th>RP2350A flash cold (200)</th><th>RP2350B flash cold (140)</th></tr></thead><tbody><tr><td>48 MHz</td><td>688</td><td>1750</td><td>417</td><td>4167</td><td>2917</td></tr><tr><td>96 MHz</td><td>344</td><td>875</td><td>208</td><td>2083</td><td>1458</td></tr><tr><td>120 MHz</td><td>275</td><td>700</td><td>167</td><td>1667</td><td>1167</td></tr><tr><td>125 MHz</td><td>264</td><td>672</td><td>-</td><td>-</td><td>-</td></tr><tr><td>133 MHz</td><td>248</td><td>632</td><td>150</td><td>1504</td><td>1053</td></tr><tr><td>150 MHz</td><td>220</td><td>560</td><td><strong>133</strong></td><td><strong>1333</strong></td><td><strong>933</strong></td></tr><tr><td>200 MHz</td><td><strong>165</strong></td><td><strong>420</strong></td><td>-</td><td>-</td><td>-</td></tr></tbody></table></div>
+<figure class="chart" id="chart-scaling"><figcaption><span class="chart-title">Hot path with the table in flash, cold cache</span><span class="chart-sub">Typical (p50) time per bus cycle against the system clock. The cycle count is constant, so the time scales as 1/f.</span></figcaption><ul class="legend"><li><span class="swatch s1"></span>RP2040 (84 cycles)</li><li><span class="swatch s2"></span>RP2350A (200 cycles)</li><li><span class="swatch s3"></span>RP2350B (140 cycles)</li></ul><div class="plot" role="img" aria-label="Hot path with the table in flash, cold cache; the values are in the table above"></div></figure>
+<p>Throughput scales the same way. For example, uncached flash reads go from 3.7 MB/s at 48 MHz to 15.3 MB/s at 200 MHz on the RP2040, from 2.3 to 7.2 MB/s on the RP2350A and from 3.5 to 11.0 MB/s on the RP2350B. DMA moves ~3.98 bytes per cycle on all boards (191 MB/s at 48 MHz, 597 MB/s at 150 MHz).</p>
+<h2 id="peripherals-and-interrupts">Peripherals and interrupts</h2>
+<div class="table-wrap"><table><thead><tr><th></th><th>RP2040</th><th>RP2350 M33</th><th>RP2350 Hazard3</th></tr></thead><tbody><tr><td>DMA copy 16 KB (bytes per cycle)</td><td>3.97</td><td>3.98</td><td>3.98</td></tr><tr><td>DMA single-word transfer</td><td>29 cyc</td><td>16 cyc</td><td>15 cyc</td></tr><tr><td>DMA, 4 channels at once (aggregate)</td><td>-</td><td>399 MB/s</td><td>399 MB/s</td></tr><tr><td>PIO: CPU to PIO to CPU round trip</td><td>20 cyc</td><td>17 cyc</td><td>14 cyc</td></tr><tr><td>PIO fed by DMA</td><td>1.79 cyc/word (280 MB/s)</td><td>1.55 cyc/word (386-391 MB/s)</td><td>1.36 cyc/word (437-442 MB/s)</td></tr><tr><td>SIO GPIO register write / read</td><td>13 cyc</td><td>8 cyc</td><td>9 cyc</td></tr><tr><td>GPIO output-to-input turnaround (internal)</td><td>20 cyc</td><td>17 cyc (RP2350B)</td><td>14 cyc (RP2350B)</td></tr><tr><td>Software interrupt entry p50</td><td>25 cyc</td><td>25 cyc</td><td>45 cyc</td></tr><tr><td>Software interrupt round trip p50</td><td>60 cyc</td><td>48 cyc</td><td>94 cyc</td></tr><tr><td>Core 1 launch</td><td>46 us</td><td>44 us (RP2350B), 76 us (RP2350A)</td><td>58 us (RP2350B)</td></tr><tr><td>Inter-core FIFO round trip p50</td><td>88 cyc</td><td>68-75 cyc</td><td>66-71 cyc</td></tr><tr><td>Spinlock acquire + release p50</td><td>17 cyc</td><td>14 cyc</td><td>16 cyc</td></tr></tbody></table></div>
+<p>The worst cases of interrupt and core-launch figures contain cold code fetches from flash, so they are 1.6-2x larger on the RP2350A (dual mode) than on the RP2350B. For example, interrupt entry max is 1044-1310 vs 624-818 cycles on the M33, depending on where the build puts the handler. The medians are identical. The turnaround test found no free pin on the RP2350A board (GPIO 20-22 and 26-28 are held by something on the board).</p>
+<h2 id="arm-interpreter-harmony-cartridge-code">ARM interpreter (Harmony cartridge code)</h2>
+<p>A Thumb (ARMv4T) interpreter running real ARM code of seven Atari 2600 Harmony cartridge games. The code is replayed from recordings and checked bit for bit against the Gopher2600 emulator. The game data is not distributed with PicoBench; see <a href="../workload/README.md">workload/README.md</a>.</p>
+<div class="table-wrap"><table><thead><tr><th></th><th>RP2040 (M0+)</th><th>RP2350 M33</th><th>RP2350 Hazard3</th></tr></thead><tbody><tr><td>Cycles per guest instruction, all games</td><td>42.3</td><td>28.2</td><td>24.4-24.5</td></tr><tr><td>Guest MIPS at the default clock</td><td>3.0</td><td>5.3</td><td>6.1</td></tr><tr><td>Guest MIPS at the highest rated clock</td><td>4.7 (200 MHz)</td><td>5.3 (150 MHz)</td><td>6.1 (150 MHz)</td></tr><tr><td>Guest MIPS at the highest overclock confirmed</td><td>9.9 (420 MHz)</td><td>14.6 (RP2350B, 412 MHz); 11.3 (RP2350A, 320 MHz)</td><td>17.2 (RP2350B, 420 MHz)</td></tr><tr><td>Games whose need is met there (of 7)</td><td>2 (Boom!, Wizard of Wor)</td><td>2</td><td>4 (also Draconian, Galagon)</td></tr></tbody></table></div>
+<p>The cycles per instruction are identical on both RP2350 boards and at every clock, and the overclocked figures use them. The overclocking run measured the synthetic load directly: 9.76 / 14.40 / 15.70 MIPS. The games need 8.9 (Boom!), 9.0 (Wizard of Wor), 16.3 (Draconian), 16.7 (Galagon), 20.5 (MK), 26.8 (Stratovox) and 29.5 (Spiders) guest MIPS. Most of the games need 16-30 guest MIPS. That is 2-3x more than a decode-on-the-fly interpreter delivers, so a faster executor, not a faster clock, is what would close the gap.</p>
+<h2 id="overclocking-outside-specification">Overclocking (outside specification)</h2>
+<p>The overclocking firmware (<code>PICOBENCH_VARIANT=overclock</code>, <code>dist/*_overclock.uf2</code>) raises clk_sys in 10 MHz steps at each core voltage from 1.10 to 1.30 V. 1.30 V is the regulator's limit while it is locked. Each step lasts 250 ms:</p>
+<ul><li>both cores run a checked integer kernel;</li><li>core 0 also runs the ARM interpreter on a synthetic load, SRAM and DMA patterns, a flash read-back and a PSRAM pattern.</li></ul>
+<p>During the search the flash stays at SCK 75 MHz or less and PSRAM at 133 MHz or less, so only the microcontroller runs outside its rating (the flash probe below goes up to 133 MHz). The last good step is then run again for 1.5 s. A hang is caught by the watchdog, and the run goes on with the next voltage. Four runs (results_10 to results_13) are combined below. Values are the highest step passed in MHz. ✓ = confirmed for 1.5 s, H = the next step hung, so the value is not confirmed.</p>
+<div class="table-wrap"><table><thead><tr><th>Core voltage</th><th>1.10 V</th><th>1.15 V</th><th>1.20 V</th><th>1.25 V</th><th>1.30 V</th></tr></thead><tbody><tr><td>RP2040 (M0+)</td><td>309-320 ✓</td><td>351-360 H</td><td>380 H</td><td>412 ✓, 420 H</td><td>420 ✓, 432-450 H</td></tr><tr><td>RP2350B, M33</td><td>309 H</td><td>330 ✓</td><td>360 ✓</td><td>390 ✓</td><td>412 ✓ (420: one pass, one fail)</td></tr><tr><td>RP2350B, Hazard3</td><td>309 H</td><td>340 ✓</td><td>369 ✓</td><td>400 ✓</td><td>420 ✓ (432 fails)</td></tr><tr><td>RP2350A, M33</td><td>320 H</td><td>320 ✓</td><td>320 H</td><td>320 H</td><td>hangs at 320</td></tr><tr><td>RP2350A, Hazard3</td><td>320 H</td><td>hangs at 320</td><td>hangs at 320</td><td>hangs at 320</td><td>hangs at 320</td></tr></tbody></table></div>
+<figure class="chart" id="chart-overclock"><figcaption><span class="chart-title">Highest clock that passed, by core voltage</span><span class="chart-sub">Outside specification. Highest 10 MHz step that passed 250 ms of checks on both cores (the lowest of the runs that reached it); Cortex-M33 on the RP2350. Higher is better.</span></figcaption><ul class="legend"><li><span class="swatch s1"></span>RP2040</li><li><span class="swatch s2"></span>RP2350A (to 1.25 V; hangs at 1.30 V)</li><li><span class="swatch s3"></span>RP2350B</li></ul><div class="plot" role="img" aria-label="Highest clock that passed, by core voltage; the values are in the table above"></div></figure>
+<ul><li><strong>RP2040 and WeAct RP2350B scale with voltage.</strong> At 1.30 V they reach 420-450 MHz (2.1-2.2x the RP2040's 200 MHz rating) and 412-420 MHz (2.7-2.8x the RP2350's 150 MHz). Hazard3 runs ~10 MHz higher than the M33 on the same chip. Chip temperature stayed at 31-41 °C.</li><li><strong>The first check to fail</strong> is almost always the ARM interpreter, or core 1 not starting. Only once did the integer kernel itself go wrong.</li><li><strong>The RP2350A clone stops at ~320 MHz at every voltage.</strong> More voltage makes it worse: at 1.15 V and up, Hazard3 hangs even at 320 MHz. At 1.10 V it matches the WeAct, so the chip is not the limit. The most likely cause is this board's supply for the on-chip switching regulator (external inductor and capacitors), but that is not proven. Its temperature sensor reads implausible values, so the explorer's 80 °C stop cannot protect it.</li><li><strong>At 390 MHz with PSRAM divider 3</strong> (SCK 130 MHz), an uncached PSRAM read takes 207 ns. The explorer's main checks keep the flash in its boot mode at SCK 65-75 MHz, where a miss costs ~520-570 ns. The flash probe below measures the fastest setting.</li></ul>
+<p><strong>Flash at the overclocked maximum</strong> (results_12 and 13). The explorer returns once more to a clock that has already passed and tries quad continuous read with SCK at most 133 MHz, scanning every RX delay. That clock is the confirmed maximum, or the start of a stage, which already passed at a lower voltage:</p>
+<div class="table-wrap"><table><thead><tr><th>clk_sys</th><th>Divider (SCK)</th><th>Working RX delays</th><th>Miss</th><th>Uncached 4 KB</th></tr></thead><tbody><tr><td>330 MHz (M33)</td><td>3 (110 MHz)</td><td>1-6</td><td>90 cyc = 272 ns</td><td>28.2 MB/s</td></tr><tr><td>360 MHz (M33)</td><td>3 (120 MHz)</td><td>2-6</td><td>90 cyc = 250 ns</td><td>30.8 MB/s</td></tr><tr><td><strong>390 MHz (M33)</strong></td><td><strong>3 (130 MHz)</strong></td><td>2-6</td><td><strong>90 cyc = 230 ns</strong></td><td><strong>33.4 MB/s</strong></td></tr><tr><td>412 MHz (M33)</td><td>4 (103 MHz)</td><td>1-7</td><td>118 cyc = 286 ns</td><td>27.8 MB/s</td></tr><tr><td>420 MHz (Hazard3)</td><td>4 (105 MHz)</td><td>1-7</td><td>116 cyc = 276 ns</td><td>28.5 MB/s</td></tr><tr><td>RP2040, 309 MHz</td><td>SSI 4 (77 MHz)</td><td>1-3 of 0-7</td><td>95 cyc = 307 ns</td><td>-</td></tr><tr><td>RP2040, 351 MHz</td><td>SSI 4 (88 MHz)</td><td>1-4</td><td>95 cyc = 270 ns</td><td>-</td></tr><tr><td>RP2040, 380 MHz</td><td>SSI 4 (95 MHz)</td><td>1-4</td><td>95 cyc = 250 ns</td><td>-</td></tr><tr><td><strong>RP2040, 412 MHz</strong></td><td><strong>SSI 4 (103 MHz)</strong></td><td>1-4</td><td><strong>95 cyc = 230 ns</strong></td><td>-</td></tr></tbody></table></div>
+<ul><li><strong>The frame models hold.</strong> RP2350: 28 x 3 + 5 = 89 cycles and 28 x 4 + 5 = 117. RP2040: 20 x 4 + ~15 = 95.</li><li><strong>The best miss is 0.23 us on both chips</strong>: the RP2350 at 390 MHz with divider 3, the RP2040 at 412 MHz with SSI divider 4. On the RP2350 that is only 12 % better than the in-spec best (0.26 us at 133 MHz with divider 1). The flash SCK sets the miss time, not the CPU clock, and above 400 MHz the divider has to go up to 4.</li><li><strong>The RX-delay windows are wide</strong> because RXDELAY counts half cycles of a much faster clock.</li><li><strong>On the RP2040 every stage ended in a hang</strong> before its confirmation. Its flash figures come from the probe at each stage's start.</li></ul>
+<p>These are limits of one chip of each kind, at room temperature, over seconds - not clocks to run at. Leave a margin.</p>
+<h2 id="conclusions">Conclusions</h2>
+<ol><li><strong>The two RP2350 boards are the same chip in cycles.</strong> All differences come from the flash read mode the boot ROM picks: dual on the black clone, whose QE bit is clear, and quad on the WeAct. With QE set (volatile is enough), the black clone reads quad exactly like the WeAct.</li><li><strong>A flash cache miss costs one SPI frame</strong> (frame SCK cycles x divider + ~5). The best setting tested on the RP2350 is quad with continuous read at SCK 75 MHz: <strong>0.41 us</strong> per miss and 17.7 MB/s on both boards. That matches the RP2040's 0.42 us. The boot defaults are 1.15 us (black clone) and 0.75 us (WeAct).</li><li><strong>For hard real-time loops, SRAM decides.</strong> An SRAM-resident hot path takes 120-133 ns on the RP2350 and 264 ns on the RP2040 at their default clocks. It is unaffected by flash mode and by DMA in SRAM or PSRAM. A 10 kHz interrupt adds ~250 cycles to its p99.9. Bulk SRAM reads do feel a DMA copy in the same banks: +36 % on the RP2040, +4 % on the RP2350, and nothing when the RP2350's DMA works in the other bank group.</li><li><strong>Hazard3 vs M33:</strong> Hazard3 is faster for ALU work, copies, the hot path (18 vs 20 cycles) and interpretation (24.4 vs 28.2 cycles per instruction). The M33 is faster for dependent loads and division.</li><li><strong>PSRAM</strong> is as fast as SRAM when cached and ~0.37 us per uncached access. For random reads over a working set much larger than the 16 KB cache, the uncached alias is 21 % faster than the cached one (53 vs 67 cycles per load). PSRAM DMA can stretch a flash miss to 1.85 us and slow cached flash streaming ~30x. A DMA reading flash slows uncached PSRAM streaming 6x. Keep time-critical code and data out of flash and PSRAM while the other one is busy.</li><li><strong>Clock:</strong> every latency in cycles is constant from 48 to 200 MHz, so time scales 1/f. The exception is PSRAM, which is faster per access at 96 MHz than at 120-133 MHz because of the SDK's divider choice.</li><li><strong>For memory, 133 MHz beats 150 MHz.</strong> On the RP2350, divider 1 at 133 MHz gives the fastest flash miss (0.26 us) and the fastest in-spec PSRAM read (0.25 us). The CPU is 11 % slower than at 150 MHz. The PSRAM is rated for 133 MHz. The flash read correctly at SCK 133 MHz on both boards, but its rated maximum was not checked. The RP2040 at 200 MHz (1.15 V) runs everything 1.6x faster than at 125 MHz, with flash SCK 100 MHz.</li><li><strong>Overclocking</strong> roughly doubles to triples the CPU clock on the RP2040 and on the WeAct RP2350B. It still does not bring the ARM interpreter to the speed most of the games need: at best 4 of 7, on Hazard3 at 420 MHz. A flash miss gains little from it, 0.23 us at best, because the flash clock stays at 133 MHz or less.</li></ol>
+<h2 id="caveats">Caveats</h2>
+<ul><li>One board of each kind (two RP2040 boards for the last runs), at room temperature. Each flash setting was verified on 2 MB of reads, each PSRAM setting on 256 KB patterns. That is not a long-term stability proof, least of all for the settings with a single working RX delay. The flash chips' rated maximum clocks were not checked against datasheets.</li><li>Quad, continuous-read and divider-1 settings on the RP2350 were tried by PicoBench tests 431-433 and restored afterwards. They are not what the boards use by default.</li><li>Until 2026-11-07 the flash and PSRAM sampling loops ran from flash. Their instruction fetches shared the XIP port with the access being measured. Cache hits read 12 / 8 / 8 cycles instead of 10 / 4 / 4, and single uncached reads 4 cycles too long. Older reports carry those figures.</li><li>The RP2350A's internal temperature sensor reads implausible values (-8 to -13 °C), probably a different ADC reference on that board. It does not affect any timing.</li><li>Numbers come from PicoBench's REPORT.TXT / RESULTS.CSV of the runs listed under "Data"; those files stay on the boards' USB disks and are not part of this repository.</li></ul>
+<p class="foot">Generated from board-comparison.md by worklog/tools/make_comparison_html.py.</p>
+</main>
+<script>
+const CHARTS = [{"id": "chart-miss", "title": "Cost of one flash cache miss", "subtitle": "Time to fetch one 8-byte line from flash, by read mode and flash clock. Lower is better.", "unit": "ns", "series": [{"name": "Board's boot default", "slot": 1}, {"name": "Tested setting (PicoBench 431-433)", "slot": 2}], "rows": [{"label": "RP2350A boot: dual + command, 50 MHz", "value": 1153, "series": 0, "note": "173 cycles @ 150 MHz"}, {"label": "RP2350 dual continuous, 50 MHz", "value": 993, "series": 1, "note": "149 cycles"}, {"label": "RP2350 quad + command, 37.5 MHz", "value": 993, "series": 1, "note": "149 cycles"}, {"label": "RP2350B boot: quad + command, 50 MHz", "value": 753, "series": 0, "note": "113 cycles @ 150 MHz"}, {"label": "RP2350 dual continuous, 75 MHz", "value": 680, "series": 1, "note": "102 cycles"}, {"label": "RP2350 quad continuous, 50 MHz", "value": 593, "series": 1, "note": "89 cycles"}, {"label": "RP2350 quad + command, 75 MHz", "value": 520, "series": 1, "note": "78 cycles"}, {"label": "RP2040 boot: quad continuous, 62.5 MHz", "value": 424, "series": 0, "note": "53 cycles @ 125 MHz"}, {"label": "RP2350 quad continuous, 75 MHz", "value": 413, "series": 1, "note": "62 cycles"}, {"label": "RP2350 quad continuous, 96 MHz (clk 96)", "value": 354, "series": 1, "note": "34 cycles @ 96 MHz"}, {"label": "RP2350 quad continuous, 133 MHz (clk 133)", "value": 256, "series": 1, "note": "34 cycles @ 133 MHz"}]}, {"id": "chart-hotpath", "title": "Cartridge hot path, worst case", "subtitle": "Maximum time for one emulated bus cycle at each board's default clock (Cortex-M33 on the RP2350). Lower is better.", "unit": "ns", "series": [{"name": "RP2040 @ 125 MHz", "slot": 1}, {"name": "RP2350A @ 150 MHz", "slot": 2}, {"name": "RP2350B @ 150 MHz", "slot": 3}], "groups": [{"label": "Table in SRAM", "values": [320, 153, 153], "notes": ["40 cycles", "23 cycles", "23 cycles"]}, {"label": "Table in flash, cold cache", "values": [720, 1333, 933], "notes": ["90 cycles", "200 cycles", "140 cycles"]}, {"label": "Table in flash, uncached", "values": [704, 773, 660], "notes": ["88 cycles", "116 cycles", "99 cycles"]}, {"label": "Table in PSRAM, uncached", "values": [null, null, 400], "notes": ["no PSRAM", "no PSRAM", "60 cycles"]}]}, {"id": "chart-scaling", "title": "Hot path with the table in flash, cold cache", "subtitle": "Typical (p50) time per bus cycle against the system clock. The cycle count is constant, so the time scales as 1/f.", "unit": "ns", "x_label": "clk_sys (MHz)", "x_domain": [40, 210], "x_ticks": [48, 96, 120, 150, 200], "x_div": 1, "x_suffix": " MHz", "series": [{"name": "RP2040 (84 cycles)", "slot": 1, "points": [[48, 1750], [96, 875], [120, 700], [125, 672], [133, 632], [150, 560], [200, 420]]}, {"name": "RP2350A (200 cycles)", "slot": 2, "points": [[48, 4167], [96, 2083], [120, 1667], [133, 1504], [150, 1333]]}, {"name": "RP2350B (140 cycles)", "slot": 3, "points": [[48, 2917], [96, 1458], [120, 1167], [133, 1053], [150, 933]]}]}, {"id": "chart-overclock", "title": "Highest clock that passed, by core voltage", "subtitle": "Outside specification. Highest 10 MHz step that passed 250 ms of checks on both cores (the lowest of the runs that reached it); Cortex-M33 on the RP2350. Higher is better.", "unit": "MHz", "x_label": "core voltage", "x_domain": [1080, 1320], "x_ticks": [1100, 1150, 1200, 1250, 1300], "x_div": 1000, "x_dec": 2, "x_suffix": " V", "series": [{"name": "RP2040", "slot": 1, "points": [[1100, 309], [1150, 351], [1200, 380], [1250, 412], [1300, 432]]}, {"name": "RP2350A (to 1.25 V; hangs at 1.30 V)", "slot": 2, "points": [[1100, 320], [1150, 320], [1200, 320], [1250, 320]]}, {"name": "RP2350B", "slot": 3, "points": [[1100, 309], [1150, 330], [1200, 360], [1250, 390], [1300, 412]]}]}];
+const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+const NS = 'http://www.w3.org/2000/svg';
+function el(tag, attrs, parent) {
+  const e = document.createElementNS(NS, tag);
+  for (const k in attrs) e.setAttribute(k, attrs[k]);
+  if (parent) parent.appendChild(e);
+  return e;
+}
+function niceMax(v) {
+  const p = Math.pow(10, Math.floor(Math.log10(v)));
+  for (const m of [1, 2, 2.5, 5, 10]) if (m * p >= v) return m * p;
+  return 10 * p;
+}
+let UNIT = 'ns';   // set per chart by renderAll()
+function fmt(v) {
+  if (UNIT === 'MHz') return v + ' MHz';
+  return v >= 1000 ? (v / 1000).toFixed(v % 1000 ? 2 : 0).replace(/\.?0+$/, '') + ' µs' : v + ' ns';
+}
+function tipFor(plot) {
+  let t = plot.querySelector('.tip');
+  if (!t) { t = document.createElement('div'); t.className = 'tip'; plot.appendChild(t); }
+  return t;
+}
+function attachTip(plot, node, html, cx, cy) {
+  const tip = tipFor(plot);
+  const show = () => {
+    tip.innerHTML = html; tip.style.display = 'block';
+    const w = plot.clientWidth, tw = tip.offsetWidth;
+    tip.style.left = Math.max(0, Math.min(cx - tw / 2, w - tw)) + 'px';
+    tip.style.top = Math.max(0, cy - tip.offsetHeight - 10) + 'px';
+  };
+  const hide = () => { tip.style.display = 'none'; };
+  node.addEventListener('pointerenter', show); node.addEventListener('pointerleave', hide);
+  node.addEventListener('focus', show); node.addEventListener('blur', hide);
+}
+function gridX(svg, x0, x1, top, bottom, max, step) {
+  for (let v = 0; v <= max + 1e-9; v += step) {
+    const x = x0 + (x1 - x0) * v / max;
+    el('line', {x1: x, x2: x, y1: top, y2: bottom, stroke: css('--grid'), 'stroke-width': 1}, svg);
+    const t = el('text', {x: x, y: bottom + 16, 'text-anchor': 'middle', 'font-size': 11, fill: css('--text-3')}, svg);
+    t.textContent = fmt(v);
+  }
+}
+function hbars(c, plot) {
+  const W = plot.clientWidth, narrow = W < 560;
+  const labelW = narrow ? 0 : Math.min(300, W * 0.42), rowH = narrow ? 44 : 28, bar = 14;
+  const top = 4, H = top + c.rows.length * rowH + 24;
+  const svg = el('svg', {viewBox: `0 0 ${W} ${H}`, height: H});
+  const x0 = labelW + 4, x1 = W - 70;
+  const max = niceMax(Math.max(...c.rows.map(r => r.value)));
+  const step = max / 4;
+  gridX(svg, x0, x1, top, top + c.rows.length * rowH, max, step);
+  c.rows.forEach((r, i) => {
+    const yRow = top + i * rowH, y = yRow + (narrow ? 22 : (rowH - bar) / 2);
+    const lab = el('text', {x: narrow ? x0 : labelW - 8, y: narrow ? yRow + 14 : y + bar / 2 + 4,
+      'text-anchor': narrow ? 'start' : 'end', 'font-size': 12, fill: css('--text')}, svg);
+    lab.textContent = r.label;
+    const w = Math.max(2, (x1 - x0) * r.value / max);
+    const g = el('g', {class: 'mark', tabindex: 0, 'aria-label': `${r.label}: ${fmt(r.value)}, ${r.note}`}, svg);
+    el('rect', {class: 'hit', x: x0, y: y - 6, width: Math.max(w, 24), height: bar + 12, fill: 'transparent'}, g);
+    const slot = c.series[r.series].slot;
+    el('path', {d: `M${x0},${y} h${w - 4} a4,4 0 0 1 4,4 v${bar - 8} a4,4 0 0 1 -4,4 h${-(w - 4)} z`,
+      fill: css('--s' + slot)}, g);
+    const v = el('text', {x: x0 + w + 6, y: y + bar / 2 + 4, 'font-size': 12, fill: css('--text-2')}, svg);
+    v.textContent = fmt(r.value);
+    attachTip(plot, g, `<b>${r.label}</b><br>${fmt(r.value)} · ${r.note}<br>${c.series[r.series].name}`, x0 + w / 2, y);
+  });
+  plot.appendChild(svg);
+}
+function groupedBars(c, plot) {
+  const W = plot.clientWidth, narrow = W < 560;
+  const n = c.series.length, bar = 12, gap = 2, groupH = n * (bar + gap) + (narrow ? 34 : 18);
+  const labelW = narrow ? 0 : Math.min(230, W * 0.32), top = 4;
+  const H = top + c.groups.length * groupH + 24;
+  const svg = el('svg', {viewBox: `0 0 ${W} ${H}`, height: H});
+  const x0 = labelW + 4, x1 = W - 70;
+  const all = c.groups.flatMap(g => g.values.filter(v => v != null));
+  const max = niceMax(Math.max(...all));
+  gridX(svg, x0, x1, top, top + c.groups.length * groupH, max, max / 4);
+  c.groups.forEach((gr, gi) => {
+    const gy = top + gi * groupH + (narrow ? 20 : 6);
+    const lab = el('text', {x: narrow ? x0 : labelW - 8, y: narrow ? gy - 6 : gy + (n * (bar + gap)) / 2 + 4,
+      'text-anchor': narrow ? 'start' : 'end', 'font-size': 12, fill: css('--text')}, svg);
+    lab.textContent = gr.label;
+    gr.values.forEach((v, si) => {
+      const y = gy + si * (bar + gap);
+      const s = c.series[si];
+      if (v == null) {
+        const t = el('text', {x: x0 + 4, y: y + bar - 2, 'font-size': 11, fill: css('--text-3')}, svg);
+        t.textContent = s.name.split(' ')[0] + ': ' + gr.notes[si];
+        return;
+      }
+      const w = Math.max(2, (x1 - x0) * v / max);
+      const g = el('g', {class: 'mark', tabindex: 0, 'aria-label': `${gr.label}, ${s.name}: ${fmt(v)}, ${gr.notes[si]}`}, svg);
+      el('rect', {class: 'hit', x: x0, y: y - 1, width: Math.max(w, 24), height: bar + 2, fill: 'transparent'}, g);
+      el('path', {d: `M${x0},${y} h${w - 4} a4,4 0 0 1 4,4 v${bar - 8} a4,4 0 0 1 -4,4 h${-(w - 4)} z`,
+        fill: css('--s' + s.slot)}, g);
+      const tv = el('text', {x: x0 + w + 6, y: y + bar - 2, 'font-size': 11, fill: css('--text-2')}, svg);
+      tv.textContent = fmt(v);
+      attachTip(plot, g, `<b>${gr.label}</b><br>${s.name}: ${fmt(v)} · ${gr.notes[si]}`, x0 + w / 2, y);
+    });
+  });
+  plot.appendChild(svg);
+}
+function lines(c, plot) {
+  const W = plot.clientWidth, narrow = W < 560;
+  const H = narrow ? 260 : 320, left = 56, right = narrow ? 16 : 150, top = 12, bottom = H - 40;
+  const svg = el('svg', {viewBox: `0 0 ${W} ${H}`, height: H});
+  const xs = c.x_domain, ymax = niceMax(Math.max(...c.series.flatMap(s => s.points.map(p => p[1]))));
+  const xl_ = v => (v / c.x_div).toFixed(c.x_dec || 0) + c.x_suffix;
+  const X = v => left + (W - left - right) * (v - xs[0]) / (xs[1] - xs[0]);
+  const Y = v => bottom - (bottom - top) * v / ymax;
+  for (let v = 0; v <= ymax + 1e-9; v += ymax / 4) {
+    el('line', {x1: left, x2: W - right, y1: Y(v), y2: Y(v), stroke: css('--grid'), 'stroke-width': 1}, svg);
+    const t = el('text', {x: left - 8, y: Y(v) + 4, 'text-anchor': 'end', 'font-size': 11, fill: css('--text-3')}, svg);
+    t.textContent = fmt(v);
+  }
+  c.x_ticks.forEach(v => {
+    const t = el('text', {x: X(v), y: bottom + 18, 'text-anchor': 'middle', 'font-size': 11, fill: css('--text-3')}, svg);
+    t.textContent = c.x_div === 1 ? v : xl_(v);
+  });
+  const xl = el('text', {x: (left + W - right) / 2, y: H - 4, 'text-anchor': 'middle', 'font-size': 11, fill: css('--text-3')}, svg);
+  xl.textContent = c.x_label;
+  c.series.forEach(s => {
+    const col = css('--s' + s.slot);
+    el('path', {d: s.points.map((p, i) => (i ? 'L' : 'M') + X(p[0]) + ',' + Y(p[1])).join(''), fill: 'none',
+      stroke: col, 'stroke-width': 2, 'stroke-linejoin': 'round', 'stroke-linecap': 'round'}, svg);
+    s.points.forEach(p => {
+      const g = el('g', {class: 'mark', tabindex: 0, 'aria-label': `${s.name} at ${xl_(p[0])}: ${fmt(p[1])}`}, svg);
+      el('circle', {class: 'hit', cx: X(p[0]), cy: Y(p[1]), r: 12, fill: 'transparent'}, g);
+      el('circle', {cx: X(p[0]), cy: Y(p[1]), r: 4, fill: col, stroke: css('--surface'), 'stroke-width': 2}, g);
+      attachTip(plot, g, `<b>${s.name}</b><br>${xl_(p[0])}: ${fmt(p[1])}`, X(p[0]), Y(p[1]));
+    });
+    if (!narrow) {
+      const last = s.points[s.points.length - 1];
+      const t = el('text', {x: X(last[0]) + 10, y: Y(last[1]) + 4, 'font-size': 12, fill: css('--text-2')}, svg);
+      t.textContent = s.name.split(' ')[0] + ' ' + fmt(last[1]);
+    }
+  });
+  plot.appendChild(svg);
+}
+function renderAll() {
+  for (const c of CHARTS) {
+    const plot = document.querySelector('#' + c.id + ' .plot');
+    if (!plot) continue;
+    plot.innerHTML = '';
+    UNIT = c.unit || 'ns';
+    if (c.rows) hbars(c, plot); else if (c.groups) groupedBars(c, plot); else lines(c, plot);
+  }
+}
+let rt;
+window.addEventListener('resize', () => { clearTimeout(rt); rt = setTimeout(renderAll, 120); });
+matchMedia('(prefers-color-scheme: dark)').addEventListener('change', renderAll);
+renderAll();
+</script>
+</body>
+</html>

@@ -40,6 +40,9 @@ test_result_t test_flash_code_exec(test_ctx_t *ctx);
 test_result_t test_flash_copy_to_sram(test_ctx_t *ctx);
 test_result_t test_flash_write_scratch(test_ctx_t *ctx);
 test_result_t test_flash_xip_mode_sweep(test_ctx_t *ctx);
+test_result_t test_flash_quad_enable(test_ctx_t *ctx);      // flash_quad.c
+test_result_t test_flash_continuous_read(test_ctx_t *ctx);  // flash_quad.c
+test_result_t test_flash_sck_limit(test_ctx_t *ctx);        // flash_quad.c
 
 // psram_integrity.c, psram_bench.c, qmi_conflict.c - PSRAM (RP2350 with a chip fitted)
 test_result_t test_psram_integrity(test_ctx_t *ctx);
@@ -52,6 +55,10 @@ test_result_t test_qmi_conflict(test_ctx_t *ctx);
 test_result_t test_hotpath_memory(test_ctx_t *ctx);
 test_result_t test_hotpath_disturbance(test_ctx_t *ctx);
 test_result_t test_hotpath_patterns(test_ctx_t *ctx);
+test_result_t test_hotpath_arm_neighbour(test_ctx_t *ctx);
+
+// arm_interp.c - ARM (Thumb) interpreter on recorded cartridge code
+test_result_t test_cpu_thumb_interp(test_ctx_t *ctx);
 
 // gpio_sio.c, pio.c, dma.c, multicore.c, irq_timer.c - phase 8
 test_result_t test_gpio_sio(test_ctx_t *ctx);
@@ -66,6 +73,10 @@ test_result_t test_dma_chain_and_pacing(test_ctx_t *ctx);
 test_result_t test_multicore(test_ctx_t *ctx);
 test_result_t test_irq_latency(test_ctx_t *ctx);
 test_result_t test_irq_storm(test_ctx_t *ctx);
+
+// overclock.c - overclocking explorer (PICOBENCH_VARIANT=overclock only)
+test_result_t test_oc_explore(test_ctx_t *ctx);
+test_result_t test_oc_summary(test_ctx_t *ctx);
 
 // selftest.c - infrastructure self-checks
 test_result_t test_timing_counter(test_ctx_t *ctx);

@@ -93,6 +93,8 @@ static void log_oppoint_once(unsigned op, bool ok) {
     r.pll_usb_pd2 = rb.usb_pll.postdiv2;
     r.flash_if_reg = rb.flash_if_reg;
     r.flash_if_div = rb.flash_if_div;
+    r.flash_if_rxdelay = rb.flash_if_rxdelay;
+    r.vreg_mv = rb.vreg_mv;
     r.led_blink_mhz = led_actual_freq_mhz();
     r.ok = ok;
     rec_oppoint((uint8_t)op, &r);

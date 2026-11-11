@@ -36,8 +36,10 @@ execute_process(
 if (NOT PICOBENCH_GIT_SHA)
     set(PICOBENCH_GIT_SHA "nogit")
 endif()
+# The UF2s in dist/ are tracked, and build.sh replaces them one platform at a time, so
+# they must not count: otherwise every platform after the first would read "dirty".
 execute_process(
-    COMMAND git status --porcelain --untracked-files=no
+    COMMAND git status --porcelain --untracked-files=no -- . :!dist
     WORKING_DIRECTORY ${CMAKE_CURRENT_LIST_DIR}
     OUTPUT_VARIABLE PICOBENCH_GIT_DIRTY_OUT
     OUTPUT_STRIP_TRAILING_WHITESPACE ERROR_QUIET)
@@ -54,12 +56,17 @@ configure_file(src/core/version.h.in ${CMAKE_CURRENT_BINARY_DIR}/generated/picob
 
 # ---- Firmware -----------------------------------------------------------------
 option(PICOBENCH_TEST_CRASH "Include the debug.crash test that hangs on purpose" OFF)
+# Overclocking variant: a short run with the overclocking explorer (oc.*, outside the
+# chips' specification) and the flash/PSRAM SCK limits raised. Published separately from
+# the normal UF2s (dist/*_overclock.uf2), never part of the normal run.
+option(PICOBENCH_OVERCLOCK "Build the overclocking variant" OFF)
 
 add_executable(picobench
     src/main.c
     src/core/bench.c
     src/core/button.c
     src/core/clocks_ctl.c
+    src/core/flash_clock.c
     src/core/guard.c
     src/core/led.c
     src/core/platform.c
@@ -82,8 +89,13 @@ add_executable(picobench
     src/detect/psram_detect.c
     src/storage/flash_layout.c
     src/storage/results_store.c
+    src/tests/arm_interp.c
+    src/tests/arm/awl.c
+    src/tests/arm/synth_load.c
+    src/tests/arm/thumb_core_sram.c
     src/tests/cpu.c
     src/tests/flash_mode.c
+    src/tests/flash_quad.c
     src/tests/flash_write.c
     src/tests/flash_xip.c
     src/tests/dma.c
@@ -91,6 +103,7 @@ add_executable(picobench
     src/tests/hotpath.c
     src/tests/irq_timer.c
     src/tests/multicore.c
+    src/tests/overclock.c
     src/tests/pio.c
     src/tests/psram_bench.c
     src/tests/psram_integrity.c
@@ -107,6 +120,14 @@ add_executable(picobench
 target_compile_definitions(picobench PRIVATE
     $<$<BOOL:${PICOBENCH_TEST_CRASH}>:PICOBENCH_TEST_CRASH=1>
 )
+if (PICOBENCH_OVERCLOCK)
+    # flash.sck_limit up to 133 MHz (the highest rating of current QSPI NOR parts; above it
+    # a chip mis-sampling its own inputs could decode a write command, so that is never
+    # tried), psram.timing_sweep up to 150 MHz (APS6404: 133 MHz).
+    target_compile_definitions(picobench PRIVATE PICOBENCH_OVERCLOCK=1
+        PICOBENCH_FLASH_SCK_LIMIT_KHZ=133000u PICOBENCH_PSRAM_SCK_LIMIT_KHZ=150000u)
+    message(STATUS "PicoBench variant: OVERCLOCK (outside specification)")
+endif()
 
 target_include_directories(picobench PRIVATE
     ${CMAKE_CURRENT_LIST_DIR}/src
@@ -115,6 +136,39 @@ target_include_directories(picobench PRIVATE
 )
 
 target_compile_options(picobench PRIVATE -Wall -Wextra -Wno-unused-parameter)
+
+# ARM workload for cpu.thumb_interp and hotpath.arm_neighbour: excerpts of commercial
+# cartridge games, so it is generated locally from the user's own ROMs
+# (worklog/tools/arm_workload/awl_tool.py -> workload/arm_workload.c, git-ignored) and
+# never committed. "auto" uses that file when it exists; without a workload
+# cpu.thumb_interp reports N/A and hotpath.arm_neighbour runs its built-in synthetic
+# load only. build.sh sets this explicitly (none for the publishable UF2s).
+set(PICOBENCH_ARM_WORKLOAD "auto" CACHE STRING
+    "ARM workload C file: auto (workload/arm_workload.c if present), none, or a path")
+set(_awl "${PICOBENCH_ARM_WORKLOAD}")
+if(_awl STREQUAL "auto")
+    set(_awl "${CMAKE_CURRENT_SOURCE_DIR}/workload/arm_workload.c")
+    if(NOT EXISTS "${_awl}")
+        set(_awl "none")
+    endif()
+endif()
+if(_awl STREQUAL "none")
+    set(_awl "${CMAKE_CURRENT_SOURCE_DIR}/src/tests/arm/arm_workload_none.c")
+    message(STATUS "PicoBench ARM workload: none (cpu.thumb_interp -> N/A, hotpath.arm_neighbour -> synthetic load only)")
+else()
+    get_filename_component(_awl "${_awl}" ABSOLUTE BASE_DIR "${CMAKE_CURRENT_SOURCE_DIR}")
+    if(NOT EXISTS "${_awl}")
+        message(FATAL_ERROR "PICOBENCH_ARM_WORKLOAD=${PICOBENCH_ARM_WORKLOAD}: no such file")
+    endif()
+    message(STATUS "PicoBench ARM workload: ${_awl}")
+endif()
+target_sources(picobench PRIVATE "${_awl}")
+
+# The ARM interpreter is measured at -O2, the level the cartridge firmware uses for its
+# hot loops and the level the CHAMP_ARM.md cost model was computed at. thumb_core.c is a
+# verbatim copy of the PicoA10400 source and is compiled only through the SRAM wrapper.
+set_source_files_properties(src/tests/arm/thumb_core_sram.c PROPERTIES
+    COMPILE_OPTIONS "-O2;-Wno-unused-label")
 
 # Boards with RP2350-A2 silicon exist in the field (seen on a Pico 2 clone), so keep the
 # SDK's A2 errata workarounds (notably E14 in the PSRAM setup) enabled.

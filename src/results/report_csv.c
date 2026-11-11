@@ -95,12 +95,14 @@ void report_csv_write(sink_t *o) {
         case REC_OPPOINT: {
             const rec_oppoint_t *r = (const rec_oppoint_t *)h;
             sink_printf(o, "%s,0,oppoint,%lu,oppoint,clk_sys,kHz,,,,,,,,,,,,,,,,%lu,"
-                        "ref=%lu peri=%lu usb=%lu adc=%lu pll_sys=%lu/%lu/%lu/%lu flash_div=%lu\n",
+                        "ref=%lu peri=%lu usb=%lu adc=%lu pll_sys=%lu/%lu/%lu/%lu flash_div=%lu "
+                        "flash_rx=%lu vreg_mv=%lu\n",
                         prefix, mhz, (unsigned long)r->sys_khz, (unsigned long)r->ref_khz,
                         (unsigned long)r->peri_khz, (unsigned long)r->usb_khz,
                         (unsigned long)r->adc_khz, (unsigned long)r->pll_sys_refdiv,
                         (unsigned long)r->pll_sys_fbdiv, (unsigned long)r->pll_sys_pd1,
-                        (unsigned long)r->pll_sys_pd2, (unsigned long)r->flash_if_div);
+                        (unsigned long)r->pll_sys_pd2, (unsigned long)r->flash_if_div,
+                        (unsigned long)r->flash_if_rxdelay, (unsigned long)r->vreg_mv);
             break;
         }
         case REC_CRASH: {

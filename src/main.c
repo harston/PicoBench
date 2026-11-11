@@ -29,6 +29,7 @@
 #include "core/platform.h"
 #include "core/sequencer.h"
 #include "core/timing.h"
+#include "detect/psram_info.h"
 #include "picobench_version.h"
 #include "results/boot_status.h"
 #include "results/record.h"
@@ -67,6 +68,8 @@ static uint32_t prepare_run(const guard_boot_info_t *bi, uint32_t *nonce, bool *
     *nonce = bi->run_nonce;
     bool resumed = record_resume(bi->run_nonce);
     if (!resumed) record_new_run(bi->run_nonce);
+    // psram.detect is not repeated: bring back what it found earlier in this run.
+    if (resumed) psram_resume(bi->run_nonce);
 
     run_state_t *st = record_run_state();
     st->crash_count = bi->crash_count;
@@ -124,6 +127,8 @@ static bool run_and_store(const guard_boot_info_t *bi, bool *pass) {
 int main(void) {
     timing_init();
     led_init(PICO_DEFAULT_LED_PIN);
+    // Core voltage back to the default (a watchdog reset keeps it), boot flash setting saved.
+    clocks_init();
     // Re-apply the default operating point so every point, including the default one,
     // uses the same clk_peri source (set_sys_clock_khz moves it to pll_usb 48 MHz).
     clocks_set_op(clocks_default_op());

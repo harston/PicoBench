@@ -53,7 +53,28 @@ uint32_t bench_ram_size(void);
 
 // Free part of bank group `g` inside bench_ram(), or size 0 if none.
 uint8_t *bench_group_ram(unsigned g, uint32_t *size);
+
+// Bank group of an SRAM address (0 or 1; always 0 on the RP2040).
+unsigned bench_group_of(const void *p);
+
+// A 32-byte aligned block of `need` bytes wholly inside bank group `g`, for tests that
+// must place memory in a particular group: the free heap part of that group when it is
+// large enough, otherwise the part of g_bench_samples that lies in that group. The
+// fallback exists for the RP2350, where the firmware's own data fills group 0 and the
+// sample buffer is the only free block left there (all of the heap is in group 1).
+// The block is taken from the END of the sample buffer, so the caller may keep using
+// g_bench_samples[0 .. keep_words) meanwhile - and must not use the rest.
+// *source names what was used ("heap" / "sample buffer"). NULL if neither fits.
+uint8_t *bench_group_block(unsigned g, uint32_t need, uint32_t keep_words, const char **source);
 const char *bench_group_name(unsigned g);
+
+// Cost of one XIP cache miss: n single 32-bit reads at base + i * stride, the whole
+// XIP cache invalidated before each one, cycles stored in out[0 .. n).
+// Runs entirely from SRAM with interrupts off: after the invalidate, code fetched from
+// flash would miss too and land in or just before the timed read - which is exactly
+// what made qmi.conflict and the first flash.cache / psram.bench miss figures depend on
+// where the linker put the loop. base must be a cached XIP address (flash or PSRAM).
+void bench_cold_reads(const uint8_t *base, uint32_t stride, uint32_t n, uint32_t *out);
 
 // A deterministic PRNG, so runs are comparable (xorshift32).
 static inline uint32_t bench_rand(uint32_t *state) {

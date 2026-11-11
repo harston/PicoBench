@@ -44,7 +44,7 @@ static int64_t kbps(uint32_t bytes, uint32_t cycles, uint32_t clk_khz) {
 
 // ---- Access loops (all run from SRAM) -------------------------------------------------
 
-static uint32_t __not_in_flash_func(read32)(void *base, uint32_t bytes) {
+static uint32_t __no_inline_not_in_flash_func(read32)(void *base, uint32_t bytes) {
     const uint32_t *p = base;
     uint32_t acc = 0;
     for (uint32_t i = 0; i < bytes / 4u; i += 8) {
@@ -348,7 +348,38 @@ static void dma_release(void) {
     }
 }
 
-// Like sample_access(), but with an SRAM->SRAM DMA copy running across every sample.
+// The DMA-to-CPU phase is swept: both the CPU read and the DMA copy walk the striped
+// banks in order, so how often they collide depends on how far apart they start. With a
+// fixed phase - set by the code between starting the DMA and the timed read, in flash -
+// the RP2040's same-group slowdown read 24 % for several builds and then 36 %, with only
+// the code layout changed. Each sample now starts the DMA, waits `delay` cycles and times
+// the read, all from SRAM, and the delay steps over PHASE_SPAN cycles.
+#define PHASE_SPAN 128u
+#define DMA_PHASES 128u
+
+static uint32_t __no_inline_not_in_flash_func(dma_sample)(access_fn fn, void *base, uint32_t bytes,
+                                                          dma_channel_hw_t *ch, uint32_t src, uint32_t dst,
+                                                          uint32_t words, uint32_t ctrl, uint32_t delay,
+                                                          uint32_t *left) {
+    uint32_t irq = save_and_disable_interrupts();
+    ch->read_addr = src;
+    ch->write_addr = dst;
+    ch->transfer_count = words;
+    ch->ctrl_trig = ctrl;                   // starts the copy
+    uint32_t ts = timing_now();
+    while (timing_elapsed(ts, timing_now()) < delay) {}
+    __asm volatile("" : "+r"(base), "+r"(bytes));
+    uint32_t t0 = timing_now();
+    uint32_t r = fn(base, bytes);
+    uint32_t t1 = timing_now();
+    *left = ch->transfer_count & 0x0FFFFFFFu;
+    restore_interrupts(irq);
+    s_sink += r;
+    return timing_net(t0, t1);
+}
+
+// Like sample_access(), but with an SRAM->SRAM DMA copy running across every sample, one
+// sample per DMA-to-CPU phase.
 static void sample_with_dma(access_fn fn, void *base, uint32_t bytes, void *dma_dst,
                             const void *dma_src, uint32_t dma_words, stats_t *out) {
     access_fn volatile vfn = fn;
@@ -356,41 +387,49 @@ static void sample_with_dma(access_fn fn, void *base, uint32_t bytes, void *dma_
     channel_config_set_transfer_data_size(&c, DMA_SIZE_32);
     channel_config_set_read_increment(&c, true);
     channel_config_set_write_increment(&c, true);
+    const uint32_t ctrl = channel_config_get_ctrl_value(&c);
+    dma_channel_hw_t *ch = dma_channel_hw_addr(s_dma_ch);
     s_dma_words_done = 0;
-
-    uint32_t irq = save_and_disable_interrupts();
-    for (uint32_t i = 0; i < SAMPLES; i++) {
-        dma_channel_configure(s_dma_ch, &c, dma_dst, dma_src, dma_words, true);
-        void *b = base;
-        uint32_t n = bytes;
-        __asm volatile("" : "+r"(b), "+r"(n));
-        uint32_t t0 = timing_now();
-        uint32_t r = vfn(b, n);
-        uint32_t t1 = timing_now();
-        uint32_t left = dma_channel_hw_addr(s_dma_ch)->transfer_count;
+    for (uint32_t i = 0; i < DMA_PHASES; i++) {
+        uint32_t left = dma_words;
+        g_bench_samples[i] = dma_sample(vfn, base, bytes, ch, (uint32_t)(uintptr_t)dma_src,
+                                        (uint32_t)(uintptr_t)dma_dst, dma_words, ctrl,
+                                        i * (PHASE_SPAN / DMA_PHASES), &left);
         dma_channel_abort(s_dma_ch);
-        g_bench_samples[i] = timing_net(t0, t1);
         s_dma_words_done += dma_words - left;
-        s_sink += r;
     }
-    restore_interrupts(irq);
-    stats_from_samples(g_bench_samples, SAMPLES, out);
+    stats_from_samples(g_bench_samples, DMA_PHASES, out);
 }
 
+static int64_t slowdown_pct(uint32_t busy, uint32_t quiet) {
+    return quiet ? (int64_t)((uint64_t)busy * 100u / quiet) - 100 : 0;
+}
+
+// "Same group" is the bank group of the free heap (bench_ram()). On the RP2350 that is
+// group 1 - the firmware's own data fills group 0 - and asking for group 0 returned 0
+// bytes, so until 2026-11-07 this test reported N/A on every RP2350 (CLAUDE.md, SRAM
+// notes). The other group's block comes from bench_group_block(), which falls back to the
+// sample buffer beyond the words the samples themselves use.
 test_result_t test_sram_contention_dma(test_ctx_t *ctx) {
-    uint32_t size0, size1;
-    uint8_t *g0 = bench_group_ram(0, &size0);
-    uint8_t *g1 = bench_group_ram(1, &size1);
-    if (size0 < 64u * 1024u) return TR_NA;
+    const unsigned home = bench_group_of(bench_ram());
+    uint32_t size_home;
+    uint8_t *gh = bench_group_ram(home, &size_home);
+    if (size_home < 64u * 1024u) {
+        rec_text(ctx, "skipped", "needs 64 KB free in bank group %u, %lu KB there", home,
+                 (unsigned long)(size_home / 1024u));
+        return TR_NA;
+    }
     if (!dma_prepare()) {
         rec_text(ctx, "dma", "no free DMA channel");
         return TR_NA;
     }
 
-    uint8_t *cpu_area = g0;
+    uint8_t *cpu_area = gh;
     const uint32_t dma_words = 4096;                 // 16 KB: outlasts one CPU sample
-    uint8_t *dma_src_same = g0 + 32u * 1024u;
-    uint8_t *dma_dst_same = g0 + 48u * 1024u;
+    uint8_t *dma_src_same = gh + 32u * 1024u;
+    uint8_t *dma_dst_same = gh + 48u * 1024u;
+    rec_value(ctx, "cpu_area_addr", UNIT_HEX, (int64_t)(uintptr_t)cpu_area);
+    rec_value(ctx, "same_group", UNIT_COUNT, home);
 
     stats_t quiet, busy_same, busy_other;
     sample_access(read32, cpu_area, BLOCK_BYTES, &quiet);
@@ -398,31 +437,42 @@ test_result_t test_sram_contention_dma(test_ctx_t *ctx) {
     rec_value(ctx, "cpu_read32_quiet_rate", UNIT_KBPS, kbps(BLOCK_BYTES, quiet.p50, ctx->clk_khz));
     guard_keepalive();
 
-    // DMA copying inside the same bank group the CPU is reading.
+    // DMA copying inside the same bank group the CPU is reading. New keys (_swept): the
+    // figures before 2026-11-07 came from one, layout-dependent phase.
     sample_with_dma(read32, cpu_area, BLOCK_BYTES, dma_dst_same, dma_src_same, dma_words, &busy_same);
-    rec_stats(ctx, "cpu_read32_dma_same_group", UNIT_CYCLES, BLOCK_BYTES, &busy_same);
-    rec_value(ctx, "slowdown_same_group_percent", UNIT_COUNT,
-              quiet.p50 ? (int64_t)((busy_same.p50 * 100u) / quiet.p50) - 100 : 0);
+    rec_stats(ctx, "cpu_read32_dma_same_swept", UNIT_CYCLES, BLOCK_BYTES, &busy_same);
+    rec_value(ctx, "slowdown_same_p50_percent", UNIT_COUNT, slowdown_pct(busy_same.p50, quiet.p50));
+    rec_value(ctx, "slowdown_same_min_percent", UNIT_COUNT, slowdown_pct(busy_same.min, quiet.p50));
+    rec_value(ctx, "slowdown_same_max_percent", UNIT_COUNT, slowdown_pct(busy_same.max, quiet.p50));
     rec_value(ctx, "dma_words_same_group", UNIT_COUNT, s_dma_words_done);
     rec_value(ctx, "dma_rate_same_group", UNIT_KBPS,
-              kbps(4u * s_dma_words_done / SAMPLES, busy_same.p50, ctx->clk_khz));
+              kbps(4u * s_dma_words_done / DMA_PHASES, busy_same.p50, ctx->clk_khz));
     if (s_dma_words_done == 0) rec_error(ctx, "dma_did_not_run", 0, dma_words, 0);
     guard_keepalive();
 
     // DMA in the other bank group (RP2350 only): the case that matters for real-time code.
-    if (size1 >= 64u * 1024u) {
-        sample_with_dma(read32, cpu_area, BLOCK_BYTES, g1 + 16u * 1024u, g1, dma_words, &busy_other);
-        rec_stats(ctx, "cpu_read32_dma_other_group", UNIT_CYCLES, BLOCK_BYTES, &busy_other);
-        rec_value(ctx, "slowdown_other_group_percent", UNIT_COUNT,
-                  quiet.p50 ? (int64_t)((busy_other.p50 * 100u) / quiet.p50) - 100 : 0);
+    const char *source = "";
+    uint8_t *go = BENCH_BANK_GROUPS > 1u ? bench_group_block(1u - home, 32u * 1024u, DMA_PHASES + 64u, &source)
+                                         : NULL;
+    if (go) {
+        rec_value(ctx, "other_area_addr", UNIT_HEX, (int64_t)(uintptr_t)go);
+        rec_text(ctx, "other_area", "bank group %u, %s", 1u - home, source);
+        sample_with_dma(read32, cpu_area, BLOCK_BYTES, go + 16u * 1024u, go, dma_words, &busy_other);
+        rec_stats(ctx, "cpu_read32_dma_other_swept", UNIT_CYCLES, BLOCK_BYTES, &busy_other);
+        rec_value(ctx, "slowdown_other_p50_percent", UNIT_COUNT, slowdown_pct(busy_other.p50, quiet.p50));
+        rec_value(ctx, "slowdown_other_max_percent", UNIT_COUNT, slowdown_pct(busy_other.max, quiet.p50));
         rec_value(ctx, "dma_words_other_group", UNIT_COUNT, s_dma_words_done);
         if (s_dma_words_done == 0) rec_error(ctx, "dma_did_not_run_other", 0, dma_words, 0);
     } else {
-        rec_text(ctx, "other_group", "this chip has only one large bank group");
+        rec_text(ctx, "other_group", BENCH_BANK_GROUPS > 1u ? "no 32 KB block free in the other bank group"
+                                                            : "this chip has only one large bank group");
     }
 
     dma_release();
     rec_text(ctx, "note", "one DMA channel copies 16 KB of SRAM per sample, restarted outside the "
                           "timed region; dma_words_* proves how much it actually moved");
+    rec_text(ctx, "phase", "DMA start to CPU read swept over 0-%u cycles, one sample per phase, all in "
+                           "SRAM (since 2026-11-07); min/p50/max are over the phases",
+             PHASE_SPAN - PHASE_SPAN / DMA_PHASES);
     return TR_PASS;
 }

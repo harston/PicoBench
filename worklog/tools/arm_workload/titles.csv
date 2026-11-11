@@ -1,0 +1,36 @@
+# ARM workload catalogue for awl_tool.py. No game data here: a ROM is identified by the
+# CRC32 of the whole file, and title_crc32 is the checksum of the workload record the
+# tool must produce from it (recorder: Gopher2600 d97a9391 + instrumentation patch).
+# set: ref = the reference set PicoBench's own results are measured with.
+# need_mips: Thumb MIPS the game needs for a stable frame (slowest Harmony ARM clock in
+# Gopher2600's timing model that keeps every frame; PicoA10400 CHAMP_ARM.md section 3).
+# frames/rec_from/calls: armstat runs `frames` frames of scripted play and records
+# `calls` consecutive ARM calls from frame `rec_from` on.
+name,set,format,rom_crc32,rom_size,need_mips,frames,rec_from,calls,title_crc32,title
+mk,ref,DPC+,9767eaeb,32768,20.5,2500,2400,10,12aaf2e7,Mortal Kombat 2600 (batari Basic DPC+ kernel)
+stratovox,ref,DPC+,b3c9b2a6,32768,26.8,2500,2400,10,3adfd2b8,Stratovox (demo final CGP NTSC)
+galagon,ref,CDFJ,4f8184d7,32768,16.7,2500,2400,10,2cb62392,Galagon (demo final CG NTSC)
+boom,ref,CDFJ,1aadd6df,32768,8.9,2500,2400,10,593c25af,Boom! (demo final CGP NTSC)
+wow,ref,CDFJ,c5e38ed6,32768,9.0,2500,2400,10,5f3e5288,Wizard of Wor Arcade (demo final CG NTSC)
+draconian,ref,CDF1,e552d61c,32768,16.3,2500,2400,10,549133e7,Draconian (20171012 RC5)
+spiders,ref,CDFJ+,c4a30183,32768,29.5,2500,2400,10,7e7d4de4,Spiders Arcade (demo final CG NTSC)
+chaotic,,DPC+,49a337ab,32768,,2500,2400,10,369a7e4a,Chaotic Grill (demo final CGP NTSC) - very light ARM load
+dino,,DPC+,d81343db,32768,18.0,2500,2400,10,b734769c,Dino Eggs (demo final CGP NTSC)
+gridlock,,CDFJ,33968293,32768,,2500,2400,10,bc7e9366,GridLock (demo CGP) - frame length varies by itself so no threshold
+lucky,,DPC+,8d72c368,32768,20.7,2500,2400,10,226901d3,Lucky Chase (demo final CGP NTSC)
+rubyq,,CDFJ,e535277a,32768,12.1,2500,2400,10,d80a7262,rubyQ (demo final CGP NTSC)
+theend,,DPC+,2f27eb36,32768,21.8,2500,2400,10,b2e3f035,The End (demo final CGP NTSC)
+tomahawk,,DPC+,12bd0f20,32768,20.5,2500,2400,10,b2296db2,Tomahawk 777 (demo final CGP NTSC)
+elevator,,CDFJ+,a83a5f4b,65536,22.9,2500,2400,10,cae9787e,Elevator Agent (demo final CG NTSC)
+gorf,,CDFJ+,c90e909c,32768,24.7,2500,2400,10,0f406c3b,Gorf Arcade (demo final CG NTSC)
+ladybug,,CDFJ,04881366,32768,18.6,2500,2400,10,4d13a41c,Lady Bug Arcade (demo final CG NTSC)
+mappy,,CDFJ,935617de,32768,12.2,2500,2400,10,a72dca91,Mappy (demo final CG NTSC)
+qyx,,CDFJ+,f3e7a5ce,32768,24.3,2500,2400,10,08bb75cd,Qyx (demo final CG NTSC)
+robotwar,,CDFJ,82471f26,32768,16.9,2500,2400,10,36e4d2be,RobotWar 2684 (demo final CG NTSC)
+scramble,,DPC+,b2ceee5f,32768,18.3,2500,2400,10,9e37ff97,Scramble (demo final CG NTSC)
+supercobra,,CDF1,210f17be,32768,14.0,2500,2400,10,cf8aaaca,Super Cobra Arcade (demo final CG NTSC)
+turbo,,CDFJ+,989b3d29,131072,14.0,2500,2400,10,a8b68145,Turbo Arcade (demo final CG NTSC)
+tutankham,,CDFJ+,db8e1e5a,32768,15.7,2500,2400,10,d8daeb80,Tutankham Arcade (demo final CG NTSC)
+zaxxon,,CDFJ+,d4b499de,65536,23.1,2500,2400,10,8a8c2d6c,Zaxxon Arcade (demo v2 CG NTSC)
+zookeeper,,CDFJ,d49b4c46,32768,17.1,2500,2400,10,93093573,Zoo Keeper (demo final CG NTSC)
+rampage,,DPC+,51344f63,32768,17.3,2500,2400,10,34034ebe,Rampage omega (batari Basic DPC+ kernel)

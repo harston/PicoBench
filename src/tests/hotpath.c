@@ -41,6 +41,10 @@
 #include "pico/time.h"
 #include "results/record.h"
 #include "storage/flash_layout.h"
+#include "pico/multicore.h"
+#include "results/crc32.h"
+#include "tests/arm/awl.h"
+#include "tests/arm/synth_load.h"
 
 // 16 KB of "ROM": one Atari 2600 bank window is 4 KB, so this covers four banks.
 #define ROM_BYTES   (16u * 1024u)
@@ -59,7 +63,17 @@
 // Zero at run time; the compiler cannot know that, so the bus read stays in the path.
 static volatile uint32_t s_bus_mask;
 
+#if PICO_RP2040
+// RP2040: the address list lives in the sample buffer, which the hot path tests do not
+// use otherwise (statistics go through g_bench_stream_bins; bench_group_block() never
+// returns it on a one-group chip). Its 16 KB went to the record arena, which the 150 and
+// 200 MHz operating points had filled to 94 % (results_9). Both are 32-byte aligned, so
+// the list keeps its bank phase.
+#define s_addr g_bench_samples
+_Static_assert(BENCH_SAMPLES_MAX >= ADDR_COUNT, "sample buffer too small for the address list");
+#else
 static uint32_t s_addr[ADDR_COUNT];
+#endif
 static uint32_t s_bank_base;
 
 typedef enum { PAT_SEQUENTIAL, PAT_RANDOM, PAT_BANKSWITCH } pattern_t;
@@ -371,5 +385,237 @@ test_result_t test_hotpath_patterns(test_ctx_t *ctx) {
 
     rec_text(ctx, "note", "bankswitch: every eighth access lands on a hotspot at 0x1FF8-0x1FFB and "
                           "changes the active bank, as an F8/F6 style mapper does");
+    return TR_PASS;
+}
+
+// ---- ARM interpreter on the other core -------------------------------------------------
+//
+// The cartridge design this is for (PicoA10400 CHAMP_ARM_TODO.md, stages 2-4): one
+// core serves the console bus, the other runs a game's ARM code through an
+// interpreter or translated code - and both work out of SRAM. The question is
+// what the second core's memory traffic does to the first core's response time.
+//
+// Roles are swapped here for convenience (core 0 measures the hot path, core 1
+// interprets); the cores are symmetric masters on the bus fabric, so the effect
+// is the same. Core 1 runs one ARM program over and over, restoring its RAM from a
+// copy first, entirely from SRAM:
+//   - always: the synthetic load (src/tests/arm/synth_load.h) - written for PicoBench,
+//     no game code, so this test runs in every build, the published ones included;
+//   - with a local workload (workload/README.md) also the heaviest event-free call of
+//     Galagon (or of the workload's first title), as a check that the synthetic load
+//     disturbs the hot path the way real game code does.
+//
+// Where the memory is: the hot path table sits at bench_ram(), i.e. in the bank group
+// holding the free heap - group 0 on the RP2040, group 1 on the RP2350, whose firmware
+// data fills group 0. "same" puts the interpreter's buffers right after the table;
+// "other" (RP2350) puts them in the other group, which there can only be the tail of
+// the sample buffer (bench_group_block(); this test does not use g_bench_samples).
+// Until 2026-09-29 the test demanded 64 KB of heap in group 0 and so reported N/A on
+// every RP2350. What stays fixed wherever the buffers go: the interpreter's dispatch
+// table (tbl.0 in the .dis; group 0 on every chip) and the hot path's address list and
+// histogram are statics at link-time addresses. The recorded *_addr values say where
+// the rest was.
+
+#define NB_TITLE "galagon"
+#define NB_BYTES(rom, ram) ((((rom) + 3u) & ~3u) + 2u * (ram))   // ROM image, RAM, RAM copy
+
+static volatile uint32_t s_nb_run, s_nb_ready, s_nb_loops;
+static thumb_cpu_t s_nb_cpu;          // the staged call, copied before every run
+static uint32_t *s_nb_ram, *s_nb_ram_init;
+static uint32_t s_nb_ram_words;
+
+static void __no_inline_not_in_flash_func(nb_core1)(void) {
+    s_nb_ready = 1;
+    while (s_nb_run) {
+        // Word copies by hand, with a compiler fence in each loop: without it GCC
+        // recognises the loops and emits memcpy, which is in flash (seen in the
+        // first build: a call to ____wrap_memcpy_veneer from this function).
+        for (uint32_t i = 0; i < s_nb_ram_words; i++) {
+            s_nb_ram[i] = s_nb_ram_init[i];
+            __asm volatile("" ::: "memory");
+        }
+        thumb_cpu_t cpu;
+        const uint32_t *src = (const uint32_t *)&s_nb_cpu;
+        uint32_t *dst = (uint32_t *)&cpu;
+        for (uint32_t i = 0; i < sizeof(thumb_cpu_t) / 4u; i++) {
+            dst[i] = src[i];
+            __asm volatile("" ::: "memory");
+        }
+        thumb_run(&cpu, 10u * 1000u * 1000u);
+        s_nb_loops++;
+    }
+    s_nb_ready = 0;
+}
+
+static bool nb_start(void) {
+    s_nb_loops = 0;
+    s_nb_run = 1;
+    s_nb_ready = 0;
+    multicore_launch_core1(nb_core1);
+    uint32_t spins = 0;
+    while (!s_nb_ready && ++spins < 100000000u) {}
+    return s_nb_ready;
+}
+
+static void nb_stop(void) {
+    s_nb_run = 0;
+    uint32_t spins = 0;
+    while (s_nb_ready && ++spins < 100000000u) {}
+    multicore_reset_core1();
+}
+
+// Keep the staged state (cpu in *cpu, RAM in ram) for core 1: the RAM copy goes to init.
+static void nb_keep(const thumb_cpu_t *cpu, uint8_t *ram, uint8_t *init, uint32_t ram_size) {
+    memcpy(init, ram, ram_size);
+    s_nb_cpu = *cpu;
+    s_nb_ram = (uint32_t *)ram;
+    s_nb_ram_init = (uint32_t *)init;
+    s_nb_ram_words = ram_size / 4u;
+}
+
+// The synthetic load at `base`. One run is made here on core 0 and checked against
+// the expected result before core 1 gets it. Returns its instruction count, 0 if wrong.
+static uint32_t nb_stage_synth(uint8_t *base) {
+    uint8_t *rom = base, *ram = base + SYNTH_ROM_SIZE, *init = ram + SYNTH_RAM_SIZE;
+    thumb_cpu_t cpu, run;
+    synth_load_stage(rom, ram, &cpu);
+    memcpy(init, ram, SYNTH_RAM_SIZE);
+    run = cpu;
+    if (thumb_run(&run, 10u * 1000u * 1000u) != THUMB_ENDED || run.count != SYNTH_INSTRUCTIONS ||
+        crc32_update(0, ram, SYNTH_RAM_SIZE) != SYNTH_RAM_CRC)
+        return 0;
+    memcpy(ram, init, SYNTH_RAM_SIZE);
+    nb_keep(&cpu, ram, init, SYNTH_RAM_SIZE);
+    return SYNTH_INSTRUCTIONS;
+}
+
+// The heaviest event-free recorded call of title t at `base`. Returns its instruction
+// count, 0 on failure.
+static uint32_t nb_stage_game(uint8_t *base, const awl_title_t *t) {
+    uint32_t rom_bytes = (t->rom_size + 3u) & ~3u;
+    uint8_t *rom = base, *ram = base + rom_bytes, *init = ram + t->ram_size;
+    awl_load_rom(t, rom);
+    uint32_t best = 0, best_k = 0, instr, events;
+    thumb_cpu_t cpu;
+    for (unsigned k = 0; k < t->ncalls; k++) {
+        if (!awl_prepare_call(t, rom, ram, k, &cpu, &instr, &events)) return 0;
+        if (events == 0 && instr > best) { best = instr; best_k = k; }
+    }
+    if (!best || !awl_prepare_call(t, rom, ram, best_k, &cpu, &instr, &events)) return 0;
+    nb_keep(&cpu, ram, init, t->ram_size);
+    return best;
+}
+
+// Core 1's interpreter speed (guest MIPS x10) over `us` microseconds.
+static void nb_record_core1(test_ctx_t *ctx, const char *label, uint32_t loops, uint32_t instr, uint32_t us) {
+    char k[REC_LABEL_LEN + 8];
+    snprintf(k, sizeof k, "%.14s_c1_mips_x10", label);
+    rec_value(ctx, k, UNIT_COUNT, us ? (int64_t)((uint64_t)loops * instr * 10u / us) : 0);
+}
+
+// One variant: core 1 interprets the staged program while core 0 runs the hot path.
+static bool nb_variant(test_ctx_t *ctx, variant_t *v, const char *name, const char *c1_label,
+                       uint32_t instr) {
+    if (!nb_start()) {
+        rec_error(ctx, "core1_launch", 0, 1, 0);
+        return false;
+    }
+    v->name = name;
+    uint32_t t0 = time_us_32(), l0 = s_nb_loops;
+    run_variant(ctx, v, true);
+    nb_record_core1(ctx, c1_label, s_nb_loops - l0, instr, time_us_32() - t0);
+    nb_stop();
+    guard_keepalive();
+    return true;
+}
+
+test_result_t test_hotpath_arm_neighbour(test_ctx_t *ctx) {
+    const unsigned home = bench_group_of(bench_ram());
+    uint32_t home_size;
+    bench_group_ram(home, &home_size);
+    const uint32_t synth_bytes = NB_BYTES(SYNTH_ROM_SIZE, SYNTH_RAM_SIZE);
+    if (home_size < ROM_BYTES + synth_bytes) {
+        rec_text(ctx, "sram", "needs %lu KB of free heap in one bank group, %lu KB free",
+                 (unsigned long)((ROM_BYTES + synth_bytes) / 1024u), (unsigned long)(home_size / 1024u));
+        return TR_NA;
+    }
+    rec_text(ctx, "setup", "core 0: hot path (SRAM table, random pattern, IRQs off); core 1: an ARM "
+                           "program in the Thumb interpreter, looped from SRAM");
+
+    const uint8_t *rom_sram = sram_rom();           // the table, at bench_ram()
+    uint8_t *same = bench_ram() + ROM_BYTES;        // right after it, same group
+    variant_t v = {.rom = rom_sram, .rom_mask = ROM_MASK, .code_in_sram = true,
+                   .pattern = PAT_RANDOM, .iterations = ITERATIONS};
+    rec_value(ctx, "table_addr", UNIT_HEX, (int64_t)(uintptr_t)rom_sram);
+    rec_value(ctx, "hot_addr_list_addr", UNIT_HEX, (int64_t)(uintptr_t)s_addr);
+
+    // ---- baseline: core 1 held in reset ----
+    multicore_reset_core1();
+    v.name = "neighbour_none";
+    run_variant(ctx, &v, true);
+
+    // ---- synthetic load, buffers in the same group as the table ----
+    uint32_t instr = nb_stage_synth(same);
+    if (!instr) {
+        rec_error(ctx, "synth_result", 0, SYNTH_INSTRUCTIONS, 0);
+        return TR_FAIL;
+    }
+    rec_value(ctx, "synth_instructions", UNIT_COUNT, instr);
+    rec_value(ctx, "synth_same_addr", UNIT_HEX, (int64_t)(uintptr_t)same);
+    // core 1 alone for a moment: its speed without the hot path competing
+    if (!nb_start()) {
+        rec_error(ctx, "core1_launch", 0, 1, 0);
+        return TR_FAIL;
+    }
+    uint32_t t0 = time_us_32(), l0 = s_nb_loops;
+    while (time_us_32() - t0 < 200000u) {}
+    nb_record_core1(ctx, "core0_idle", s_nb_loops - l0, instr, time_us_32() - t0);
+    nb_stop();
+    if (!nb_variant(ctx, &v, "neighbour_synth_same", "synth_same", instr)) return TR_FAIL;
+
+    // ---- synthetic load, buffers in the other group (RP2350) ----
+    const char *source = NULL;
+    uint8_t *other = bench_group_block(1u - home, synth_bytes, 0, &source);
+    if (other) {
+        if (!nb_stage_synth(other)) {
+            rec_error(ctx, "synth_result_other", 0, SYNTH_INSTRUCTIONS, 0);
+            return TR_FAIL;
+        }
+        rec_value(ctx, "synth_other_addr", UNIT_HEX, (int64_t)(uintptr_t)other);
+        rec_text(ctx, "synth_other_source", "%s", source);
+        if (!nb_variant(ctx, &v, "neighbour_synth_other", "synth_other", instr)) return TR_FAIL;
+    } else {
+        rec_text(ctx, "other_group", BENCH_BANK_GROUPS > 1 ? "no free block in the other bank group"
+                                                            : "this chip has only one large bank group");
+    }
+
+    // ---- recorded game code (only with a local workload), same group ----
+    awl_title_t t;
+    bool found = false;
+    for (unsigned i = 0; i < awl_ntitles() && !found; i++)
+        found = awl_title(i, &t) && strcmp(t.name, NB_TITLE) == 0;
+    if (!found && awl_ntitles() > 0) found = awl_title(0, &t);
+    if (!found) {
+        rec_text(ctx, "game", "no workload in this build - it holds game code, so it is generated "
+                              "locally from your own ROMs (workload/README.md); the synthetic load stands in");
+    } else if (home_size < ROM_BYTES + NB_BYTES(t.rom_size, t.ram_size)) {
+        rec_text(ctx, "game", "%s needs %lu KB after the table, %lu KB free", t.name,
+                 (unsigned long)(NB_BYTES(t.rom_size, t.ram_size) / 1024u),
+                 (unsigned long)((home_size - ROM_BYTES) / 1024u));
+    } else {
+        instr = nb_stage_game(same, &t);
+        if (!instr) {
+            rec_error(ctx, "stage_call", 0, 1, 0);
+            return TR_FAIL;
+        }
+        rec_text(ctx, "game", "%s (%s), heaviest event-free call, workload crc32 %08lx", t.name, t.format,
+                 (unsigned long)awl_id());
+        rec_value(ctx, "game_instructions", UNIT_COUNT, instr);
+        if (!nb_variant(ctx, &v, "neighbour_game_same", "game_same", instr)) return TR_FAIL;
+    }
+
+    rec_text(ctx, "core1_state", "stopped and reset; later tests run single-core again");
+    rec_text(ctx, "note", "compare p99.9 and max of neighbour_* with neighbour_none: that is what a "
+                          "busy ARM executor on the other core costs the bus response");
     return TR_PASS;
 }

@@ -5,6 +5,13 @@
  * The last one is the question behind a cartridge design that puts the bus handling on
  * one core and everything else on the other.
  *
+ * Where the memory is: core 0 measures in the bank group that holds the free heap -
+ * group 0 on the RP2040, but group 1 on the RP2350, whose firmware data (record arena,
+ * sample buffers) fills group 0. Core 1 reads a block in that same group and, on the
+ * RP2350, one in the other group, which there can only be the tail of the sample buffer
+ * (bench_group_block()). Until 2026-09-29 this test demanded 64 KB of heap in group 0
+ * and so reported N/A on every RP2350. The addresses used are recorded.
+ *
  * Core 1 runs entirely from SRAM: code in flash would add XIP traffic of its own and
  * the contention numbers would measure the wrong thing.
  */
@@ -23,7 +30,7 @@
 
 #define SAMPLES 256u
 
-enum { CMD_IDLE = 0, CMD_ECHO, CMD_HAMMER_G0, CMD_HAMMER_G1, CMD_EXIT };
+enum { CMD_IDLE = 0, CMD_ECHO, CMD_HAMMER_SAME, CMD_HAMMER_OTHER, CMD_EXIT };
 
 static volatile uint32_t s_cmd;
 static volatile uint32_t s_core1_ready;
@@ -40,8 +47,8 @@ static void __no_inline_not_in_flash_func(core1_main)(void) {
         if (cmd == CMD_EXIT) break;
         if (cmd == CMD_ECHO) {
             if (multicore_fifo_rvalid()) multicore_fifo_push_blocking(multicore_fifo_pop_blocking());
-        } else if (cmd == CMD_HAMMER_G0 || cmd == CMD_HAMMER_G1) {
-            unsigned g = cmd == CMD_HAMMER_G0 ? 0 : 1;
+        } else if (cmd == CMD_HAMMER_SAME || cmd == CMD_HAMMER_OTHER) {
+            unsigned g = cmd == CMD_HAMMER_SAME ? 0 : 1;
             const uint32_t *p = (const uint32_t *)s_hammer_buf[g];
             uint32_t n = s_hammer_words[g], acc = 0;
             for (uint32_t i = 0; i < n; i += 8) {
@@ -81,15 +88,24 @@ static void sample_read(const void *base, uint32_t bytes, stats_t *out) {
 }
 
 test_result_t test_multicore(test_ctx_t *ctx) {
-    uint32_t g0_size, g1_size;
-    uint8_t *g0 = bench_group_ram(0, &g0_size);
-    uint8_t *g1 = bench_group_ram(1, &g1_size);
-    if (g0_size < 64u * 1024u) return TR_NA;
+    // [0] = same group as core 0's block, [1] = the other group (see the header)
+    const unsigned home = bench_group_of(bench_ram());
+    uint32_t home_size;
+    uint8_t *g_home = bench_group_ram(home, &home_size);
+    if (home_size < 32u * 1024u) {
+        rec_text(ctx, "sram", "needs 32 KB of free heap in one bank group, %lu KB free",
+                 (unsigned long)(home_size / 1024u));
+        return TR_NA;
+    }
+    const char *other_source = NULL;
+    uint8_t *g_other = bench_group_block(1u - home, 16u * 1024u, SAMPLES, &other_source);
 
-    s_hammer_buf[0] = g0 + 16u * 1024u;
+    s_hammer_buf[0] = g_home + 16u * 1024u;
     s_hammer_words[0] = 4096;
-    s_hammer_buf[1] = g1_size >= 32u * 1024u ? g1 : s_hammer_buf[0];
+    s_hammer_buf[1] = g_other ? g_other : s_hammer_buf[0];
     s_hammer_words[1] = 4096;
+    rec_value(ctx, "core0_block", UNIT_HEX, (int64_t)(uintptr_t)g_home);
+    rec_value(ctx, "core1_same_block", UNIT_HEX, (int64_t)(uintptr_t)s_hammer_buf[0]);
 
     // ---- Start core 1 ----
     s_cmd = CMD_IDLE;
@@ -148,12 +164,12 @@ test_result_t test_multicore(test_ctx_t *ctx) {
 
     // ---- Contention: core 1 reading memory while core 0 measures ----
     stats_t quiet, same, other;
-    sample_read(g0, 4096, &quiet);
+    sample_read(g_home, 4096, &quiet);
     rec_stats(ctx, "core0_read_quiet", UNIT_CYCLES, 4096, &quiet);
 
     s_hammer_count = 0;
-    s_cmd = CMD_HAMMER_G0;
-    sample_read(g0, 4096, &same);
+    s_cmd = CMD_HAMMER_SAME;
+    sample_read(g_home, 4096, &same);
     uint32_t loops_same = s_hammer_count;
     s_cmd = CMD_IDLE;
     rec_stats(ctx, "core0_read_core1_same_group", UNIT_CYCLES, 4096, &same);
@@ -162,10 +178,12 @@ test_result_t test_multicore(test_ctx_t *ctx) {
     rec_value(ctx, "core1_loops_same_group", UNIT_COUNT, loops_same);
     guard_keepalive();
 
-    if (g1_size >= 32u * 1024u) {
+    if (g_other) {
+        rec_value(ctx, "core1_other_block", UNIT_HEX, (int64_t)(uintptr_t)g_other);
+        rec_text(ctx, "core1_other_source", "%s", other_source);
         s_hammer_count = 0;
-        s_cmd = CMD_HAMMER_G1;
-        sample_read(g0, 4096, &other);
+        s_cmd = CMD_HAMMER_OTHER;
+        sample_read(g_home, 4096, &other);
         uint32_t loops_other = s_hammer_count;
         s_cmd = CMD_IDLE;
         rec_stats(ctx, "core0_read_core1_other_group", UNIT_CYCLES, 4096, &other);
@@ -173,7 +191,8 @@ test_result_t test_multicore(test_ctx_t *ctx) {
                   quiet.p50 ? (int64_t)((uint64_t)other.p50 * 100u / quiet.p50) - 100 : 0);
         rec_value(ctx, "core1_loops_other_group", UNIT_COUNT, loops_other);
     } else {
-        rec_text(ctx, "other_group", "this chip has only one large bank group");
+        rec_text(ctx, "other_group", BENCH_BANK_GROUPS > 1 ? "no free 16 KB block in the other bank group"
+                                                            : "this chip has only one large bank group");
     }
 
     // ---- Park core 1 again ----

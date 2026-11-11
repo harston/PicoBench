@@ -4,34 +4,42 @@
  * IDs are stable: never renumber or reuse an ID, reports from different firmware
  * versions are compared by ID. Ranges:
  *   1xx core/clocks, 2xx CPU, 3xx SRAM, 4xx flash/XIP, 5xx PSRAM, 6xx DMA, 7xx PIO/GPIO,
- *   8xx multicore/IRQ, 9xx misc (crypto, ADC, USB), 99x debug-only.
+ *   8xx multicore/IRQ, 9xx misc (crypto, ADC, USB), 95x overclocking variant only,
+ *   99x debug-only.
+ *
+ * The overclocking variant (PICOBENCH_OVERCLOCK) has its own, short table at the end.
  */
 
 #include "tests/tests.h"
 
 #define INV TF_INVENTORY
 
-const test_desc_t g_tests[] = {
-    // ---- Inventory (HARDWARE.TXT) -------------------------------------------------------
-    {110, SUBSYS_CORE, CHIP_ALL, INV, "core.chip", "Chip identification", test_inv_chip},
-    {111, SUBSYS_CORE, CHIP_ALL, INV, "core.firmware", "Firmware, SDK, compiler and boot ROM", test_inv_firmware},
-    {112, SUBSYS_CORE, CHIP_ALL, INV, "core.ids", "Unique identifiers", test_inv_ids},
-    {113, SUBSYS_CORE, CHIP_ALL, INV, "core.board", "Board profile (inferred)", test_inv_board},
-    {114, SUBSYS_CORE, CHIP_ALL, INV, "core.memory", "Memory map and flash layout", test_inv_memory},
-    {115, SUBSYS_CORE, CHIP_ALL, INV, "core.reset", "Reset reason", test_inv_reset},
-    {116, SUBSYS_CORE, CHIP_ALL, INV, "core.environment", "Temperature and supply", test_inv_environment},
-    {102, SUBSYS_CLOCKS, CHIP_ALL, INV, "clocks.sources", "Clock sources, PLLs and operating points",
-     test_inv_clock_sources},
-    {400, SUBSYS_FLASH, CHIP_ALL, INV, "flash.identify", "Flash chip: JEDEC, SFDP, status, unique ID",
-     test_flash_identify},
-    {401, SUBSYS_FLASH, CHIP_ALL, INV, "flash.interface", "Flash interface (SSI / QMI) configuration",
-     test_flash_interface},
-    {500, SUBSYS_PSRAM, CHIP_RP2350, INV | TF_RISKY, "psram.detect",
-     "PSRAM auto-detection on every XIP_CS1 GPIO, init and sanity check", test_psram_detect},
-    // After psram.detect and core.environment: uses what they found.
-    {117, SUBSYS_GPIO, CHIP_ALL, INV, "core.pins",
-     "Pins taken on this board, and pins free for your own hardware", test_inv_pins},
+// Inventory (HARDWARE.TXT): the same in both tables.
+#define INVENTORY_TESTS \
+    {110, SUBSYS_CORE, CHIP_ALL, INV, "core.chip", "Chip identification", test_inv_chip}, \
+    {111, SUBSYS_CORE, CHIP_ALL, INV, "core.firmware", "Firmware, SDK, compiler and boot ROM", test_inv_firmware}, \
+    {112, SUBSYS_CORE, CHIP_ALL, INV, "core.ids", "Unique identifiers", test_inv_ids}, \
+    {113, SUBSYS_CORE, CHIP_ALL, INV, "core.board", "Board profile (inferred)", test_inv_board}, \
+    {114, SUBSYS_CORE, CHIP_ALL, INV, "core.memory", "Memory map and flash layout", test_inv_memory}, \
+    {115, SUBSYS_CORE, CHIP_ALL, INV, "core.reset", "Reset reason", test_inv_reset}, \
+    {116, SUBSYS_CORE, CHIP_ALL, INV, "core.environment", "Temperature and supply", test_inv_environment}, \
+    {102, SUBSYS_CLOCKS, CHIP_ALL, INV, "clocks.sources", "Clock sources, PLLs and operating points", \
+     test_inv_clock_sources}, \
+    {400, SUBSYS_FLASH, CHIP_ALL, INV, "flash.identify", "Flash chip: JEDEC, SFDP, status, unique ID", \
+     test_flash_identify}, \
+    {401, SUBSYS_FLASH, CHIP_ALL, INV, "flash.interface", "Flash interface (SSI / QMI) configuration", \
+     test_flash_interface}, \
+    {500, SUBSYS_PSRAM, CHIP_RP2350, INV | TF_RISKY, "psram.detect", \
+     "PSRAM auto-detection on every XIP_CS1 GPIO, init and sanity check", test_psram_detect}, \
+    /* After psram.detect and core.environment: uses what they found. */ \
+    {117, SUBSYS_GPIO, CHIP_ALL, INV, "core.pins", \
+     "Pins taken on this board, and pins free for your own hardware", test_inv_pins}, \
     {910, SUBSYS_USB, CHIP_ALL, INV, "usb.config", "USB device configuration", test_inv_usb},
+
+#if !PICOBENCH_OVERCLOCK
+
+const test_desc_t g_tests[] = {
+    INVENTORY_TESTS
 
     // ---- Self-checks ----------------------------------------------------------------------
     {100, SUBSYS_CORE, CHIP_ALL, 0, "core.timing_counter",
@@ -55,6 +63,9 @@ const test_desc_t g_tests[] = {
      "Software CRC-32 over 4 KB of SRAM", test_cpu_crc32},
     {205, SUBSYS_CPU, CHIP_ALL, 0, "cpu.lut",
      "Random and sequential lookups in 4/16/64 KB SRAM tables", test_cpu_lut},
+    {210, SUBSYS_CPU, CHIP_ALL, TF_SWEEP, "cpu.thumb_interp",
+     "ARM Thumb interpreter on recorded Harmony cartridge game code, checked bit for bit",
+     test_cpu_thumb_interp},
 
     // ---- SRAM -----------------------------------------------------------------------------
     {300, SUBSYS_SRAM, CHIP_ALL, 0, "sram.integrity",
@@ -91,8 +102,8 @@ const test_desc_t g_tests[] = {
      "PSRAM read/write throughput and latency, cached and uncached", test_psram_bench},
     {512, SUBSYS_PSRAM, CHIP_RP2350, 0, "psram.copy",
      "Copies SRAM<->PSRAM and PSRAM->PSRAM, by CPU and by DMA", test_psram_copy},
-    {513, SUBSYS_PSRAM, CHIP_RP2350, TF_RISKY, "psram.timing_sweep",
-     "QMI divisor and RX delay sweep, each verified by a write/read stress test",
+    {513, SUBSYS_PSRAM, CHIP_RP2350, TF_SWEEP | TF_RISKY, "psram.timing_sweep",
+     "QMI divisor and RX delay sweep up to SCK 133 MHz, each verified by a write/read stress test",
      test_psram_timing_sweep},
     {520, SUBSYS_PSRAM, CHIP_RP2350, 0, "qmi.conflict",
      "What PSRAM traffic costs flash reads, and the other way round", test_qmi_conflict},
@@ -105,6 +116,8 @@ const test_desc_t g_tests[] = {
      "The same path with interrupts, SRAM DMA and PSRAM DMA running", test_hotpath_disturbance},
     {602, SUBSYS_CPU, CHIP_ALL, 0, "hotpath.patterns",
      "Sequential, random and bank-switching address patterns", test_hotpath_patterns},
+    {603, SUBSYS_CPU, CHIP_ALL, 0, "hotpath.arm_neighbour",
+     "The hot path while the other core runs the ARM interpreter", test_hotpath_arm_neighbour},
 
     // ---- PIO, GPIO, DMA, multicore, interrupts ------------------------------------------
     {700, SUBSYS_PIO, CHIP_ALL, 0, "pio.inventory",
@@ -137,11 +150,65 @@ const test_desc_t g_tests[] = {
     {310, SUBSYS_SRAM, CHIP_ALL, 0, "sram.contention_dma",
      "CPU read loop with a DMA stream in the same and in the other bank group",
      test_sram_contention_dma},
+    // Last stage at the default operating point on purpose: it runs only if every flash
+    // and PSRAM test at the board's default settings passed (it checks the summary).
+    {431, SUBSYS_FLASH, CHIP_RP2350, TF_RISKY, "flash.quad_enable",
+     "If QE is clear, try to set it (volatile only); then verify and measure quad reads",
+     test_flash_quad_enable},
+    {432, SUBSYS_FLASH, CHIP_RP2350, TF_RISKY, "flash.continuous_read",
+     "Continuous read mode (no command byte per access), quad and dual, verified and measured",
+     test_flash_continuous_read},
+    // Also at every other operating point (after all the default-point stages).
+    {433, SUBSYS_FLASH, CHIP_ALL, TF_SWEEP | TF_RISKY, "flash.sck_limit",
+     "Fastest flash clock divider and its RX delay window, verified and measured",
+     test_flash_sck_limit},
 #ifdef PICOBENCH_TEST_CRASH
     {990, SUBSYS_CORE, CHIP_ALL, TF_RISKY, "debug.crash",
      "Hangs on purpose to exercise watchdog recovery (debug builds only)",
      test_debug_crash},
 #endif
 };
+
+#else  // PICOBENCH_OVERCLOCK
+
+// Overclocking variant: a short run. Inventory, a baseline at the default clock, the
+// explorer (one stage per core voltage), then the flash and PSRAM limits at every
+// operating point with the SCK limits raised (CMakeLists.txt).
+const test_desc_t g_tests[] = {
+    INVENTORY_TESTS
+
+    {100, SUBSYS_CORE, CHIP_ALL, 0, "core.timing_counter",
+     "Cycle counter read cost and cross-check against the 1 MHz timer", test_timing_counter},
+    {101, SUBSYS_CLOCKS, CHIP_ALL, TF_SWEEP, "clocks.readback",
+     "Measured clk_sys and PLL output versus the requested operating point", test_clocks_readback},
+    {410, SUBSYS_FLASH, CHIP_ALL, 0, "flash.read",
+     "XIP read throughput: cached warm, streaming, and through the uncached alias", test_flash_read},
+    {411, SUBSYS_FLASH, CHIP_ALL, 0, "flash.cache",
+     "Cache hit and cold-miss latency, per-line misses, working-set sweep, invalidate cost",
+     test_flash_cache},
+    {510, SUBSYS_PSRAM, CHIP_RP2350, TF_RISKY, "psram.integrity",
+     "Patterns, address and size checks, narrow accesses and March C- over the PSRAM",
+     test_psram_integrity},
+    {950, SUBSYS_CLOCKS, CHIP_ALL, TF_RISKY, "oc.explore_1100mv",
+     "Overclocking: highest stable clk_sys at 1.10 V (outside specification)", test_oc_explore},
+    {951, SUBSYS_CLOCKS, CHIP_ALL, TF_RISKY, "oc.explore_1150mv",
+     "Overclocking: highest stable clk_sys at 1.15 V (outside specification)", test_oc_explore},
+    {952, SUBSYS_CLOCKS, CHIP_ALL, TF_RISKY, "oc.explore_1200mv",
+     "Overclocking: highest stable clk_sys at 1.20 V (outside specification)", test_oc_explore},
+    {953, SUBSYS_CLOCKS, CHIP_ALL, TF_RISKY, "oc.explore_1250mv",
+     "Overclocking: highest stable clk_sys at 1.25 V (outside specification)", test_oc_explore},
+    {954, SUBSYS_CLOCKS, CHIP_ALL, TF_RISKY, "oc.explore_1300mv",
+     "Overclocking: highest stable clk_sys at 1.30 V (outside specification)", test_oc_explore},
+    {959, SUBSYS_CLOCKS, CHIP_ALL, 0, "oc.summary",
+     "Overclocking: the highest stable clock per core voltage", test_oc_summary},
+    {513, SUBSYS_PSRAM, CHIP_RP2350, TF_SWEEP | TF_RISKY, "psram.timing_sweep",
+     "QMI divisor and RX delay sweep up to SCK 150 MHz (beyond the chip's rating), verified",
+     test_psram_timing_sweep},
+    {433, SUBSYS_FLASH, CHIP_ALL, TF_SWEEP | TF_RISKY, "flash.sck_limit",
+     "Fastest flash clock divider (SCK up to 133 MHz) and its RX delay window, verified",
+     test_flash_sck_limit},
+};
+
+#endif
 
 const unsigned g_test_count = sizeof(g_tests) / sizeof(g_tests[0]);

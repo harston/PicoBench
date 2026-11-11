@@ -6,8 +6,10 @@
  * cost of a single cache miss, so every latency here is reported as a distribution and
  * the worst case is part of the result.
  *
- * All measurement loops run from SRAM, so only the data access goes to flash; the
- * instruction fetches do not add misses of their own.
+ * The read kernels run from SRAM, so only the data access goes to flash. The cold-miss
+ * sample runs from SRAM as a whole (bench_cold_reads): until 2026-11 only the read was in
+ * SRAM and the loop around it in flash, so the instruction fetches after each invalidate
+ * added ~110 (dual) / ~60 (quad) cycles to read_miss_cold.
  */
 
 #include "tests/tests.h"
@@ -44,7 +46,7 @@ static int64_t kbps(uint32_t bytes, uint32_t cycles, uint32_t clk_khz) {
 
 // ---- Read kernels (in SRAM) ---------------------------------------------------------
 
-static uint32_t __not_in_flash_func(rd32)(void *base, uint32_t bytes) {
+static uint32_t __no_inline_not_in_flash_func(rd32)(void *base, uint32_t bytes) {
     const uint32_t *p = base;
     uint32_t acc = 0;
     for (uint32_t i = 0; i < bytes / 4u; i += 8) {
@@ -53,7 +55,7 @@ static uint32_t __not_in_flash_func(rd32)(void *base, uint32_t bytes) {
     return acc;
 }
 
-static uint32_t __not_in_flash_func(rd16)(void *base, uint32_t bytes) {
+static uint32_t __no_inline_not_in_flash_func(rd16)(void *base, uint32_t bytes) {
     const uint16_t *p = base;
     uint32_t acc = 0;
     for (uint32_t i = 0; i < bytes / 2u; i += 8) {
@@ -62,7 +64,7 @@ static uint32_t __not_in_flash_func(rd16)(void *base, uint32_t bytes) {
     return acc;
 }
 
-static uint32_t __not_in_flash_func(rd8)(void *base, uint32_t bytes) {
+static uint32_t __no_inline_not_in_flash_func(rd8)(void *base, uint32_t bytes) {
     const uint8_t *p = base;
     uint32_t acc = 0;
     for (uint32_t i = 0; i < bytes; i += 8) {
@@ -72,7 +74,7 @@ static uint32_t __not_in_flash_func(rd8)(void *base, uint32_t bytes) {
 }
 
 // One read per cache line: every access is a miss when the region is larger than the cache.
-static uint32_t __not_in_flash_func(rd_lines)(void *base, uint32_t bytes) {
+static uint32_t __no_inline_not_in_flash_func(rd_lines)(void *base, uint32_t bytes) {
     const uint8_t *p = base;
     uint32_t acc = 0;
     for (uint32_t i = 0; i < bytes; i += 8u * XIP_CACHE_LINE_SIZE) {
@@ -89,7 +91,7 @@ static uint32_t __not_in_flash_func(rd_lines)(void *base, uint32_t bytes) {
 }
 
 // A single 32-bit read: the unit of a cache miss or hit.
-static uint32_t __not_in_flash_func(rd_one)(void *base, uint32_t unused) {
+static uint32_t __no_inline_not_in_flash_func(rd_one)(void *base, uint32_t unused) {
     (void)unused;
     return *(const volatile uint32_t *)base;
 }
@@ -105,40 +107,36 @@ static uint32_t samples_for(uint32_t bytes) {
     return n;
 }
 
-static void sample_read(read_fn fn, const void *base, uint32_t bytes, stats_t *out) {
-    read_fn volatile vfn = fn;
-    uint32_t samples = samples_for(bytes);
-    s_sink += vfn((void *)base, bytes);
+// The sampling loop runs from SRAM. Run from flash, its own instruction fetches shared
+// the XIP port and cache with the data being measured: with the same arrangement the
+// PSRAM cache hit read 8 cycles instead of 4 (psram_bench.c, results_12).
+static void __no_inline_not_in_flash_func(sample_loop)(read_fn fn, const void *base, uint32_t bytes,
+                                                       uint32_t samples) {
     uint32_t irq = save_and_disable_interrupts();
     for (uint32_t i = 0; i < samples; i++) {
         void *b = (void *)base;
         uint32_t n = bytes;
         __asm volatile("" : "+r"(b), "+r"(n));
         uint32_t t0 = timing_now();
-        uint32_t r = vfn(b, n);
+        uint32_t r = fn(b, n);
         uint32_t t1 = timing_now();
         g_bench_samples[i] = timing_net(t0, t1);
         s_sink += r;
     }
     restore_interrupts(irq);
+}
+
+static void sample_read(read_fn fn, const void *base, uint32_t bytes, stats_t *out) {
+    read_fn volatile vfn = fn;
+    uint32_t samples = samples_for(bytes);
+    s_sink += vfn((void *)base, bytes);
+    sample_loop(vfn, base, bytes, samples);
     stats_from_samples(g_bench_samples, samples, out);
 }
 
 // Each sample reads a fresh address with a cold cache: the cost of one miss.
 static void sample_cold_read(const uint8_t *base, uint32_t stride, stats_t *out) {
-    read_fn volatile vfn = rd_one;
-    for (uint32_t i = 0; i < SAMPLES; i++) {
-        xip_cache_invalidate_all();
-        void *b = (void *)(base + (size_t)i * stride);
-        __asm volatile("" : "+r"(b));
-        uint32_t irq = save_and_disable_interrupts();
-        uint32_t t0 = timing_now();
-        uint32_t r = vfn(b, 0);
-        uint32_t t1 = timing_now();
-        restore_interrupts(irq);
-        g_bench_samples[i] = timing_net(t0, t1);
-        s_sink += r;
-    }
+    bench_cold_reads(base, stride, SAMPLES, g_bench_samples);
     stats_from_samples(g_bench_samples, SAMPLES, out);
 }
 
@@ -161,6 +159,8 @@ test_result_t test_flash_read(test_ctx_t *ctx) {
 
     rec_text(ctx, "cache", "%lu KB, %lu-byte lines, shared with PSRAM",
              (unsigned long)(XIP_CACHE_SIZE / 1024), (unsigned long)XIP_CACHE_LINE_SIZE);
+    rec_text(ctx, "sampling", "sampling loop in SRAM (since 2026-11-07); before, its instruction fetches "
+                              "from flash shared the XIP port with the reads");
 
     // 4 KB fits in the 16 KB cache: after the warm-up every access is a hit.
     record_read(ctx, "cached_warm_read32_4k", rd32, c, BLOCK_BYTES, ctx->clk_khz);
@@ -184,6 +184,8 @@ test_result_t test_flash_cache(test_ctx_t *ctx) {
     const uint8_t *u = uncached_ptr(FLASH_READ_OFFSET);
     stats_t s;
 
+    rec_text(ctx, "sampling", "sampling loop in SRAM (since 2026-11-07): read_hit and the working-set "
+                              "figures are not comparable with earlier builds");
     // Hit: the same line, already cached.
     s_sink += rd_one((void *)c, 0);
     sample_read(rd_one, c, 0, &s);
@@ -195,6 +197,8 @@ test_result_t test_flash_cache(test_ctx_t *ctx) {
     rec_stats(ctx, "read_miss_cold", UNIT_CYCLES, 1, &s);
     rec_value(ctx, "read_miss_cold_mcyc", UNIT_COUNT, (int64_t)(s.p50 * 1000u));
     rec_value(ctx, "read_miss_worst_cycles", UNIT_CYCLES, s.max);
+    rec_text(ctx, "miss_method", "whole sample in SRAM (invalidate, read); figures before "
+                                 "2026-11 included instruction fetches from flash");
     guard_keepalive();
 
     // Uncached alias: always goes to the chip, no allocation.

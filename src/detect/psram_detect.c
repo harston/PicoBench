@@ -22,7 +22,9 @@
 #if !PICO_RP2040
 #include "hardware/flash.h"
 #include "hardware/gpio.h"
+#include "hardware/clocks.h"
 #include "hardware/psram.h"
+#include "hardware/structs/qmi.h"
 #include "hardware/sync.h"
 #include "hardware/xip_cache.h"
 #endif
@@ -37,6 +39,17 @@ test_result_t test_psram_detect(test_ctx_t *ctx) {
 }
 
 bool psram_reapply(void) {
+    return false;
+}
+
+uint32_t psram_retime_direct(uint32_t clk_hz, uint32_t max_sck_hz) {
+    (void)clk_hz;
+    (void)max_sck_hz;
+    return 0;
+}
+
+bool psram_resume(uint32_t run_nonce) {
+    (void)run_nonce;
     return false;
 }
 
@@ -57,6 +70,38 @@ bool psram_reapply(void) {
     return true;
 }
 
+static void __no_inline_not_in_flash_func(write_m1_timing)(uint32_t timing) {
+    uint32_t irq = save_and_disable_interrupts();
+    for (uint32_t i = 0; i < 1024u; i++) __asm volatile("nop");   // let a flash access in flight finish
+    qmi_hw->m[1].timing = timing;
+    restore_interrupts(irq);
+}
+
+uint32_t psram_retime_direct(uint32_t clk_hz, uint32_t max_sck_hz) {
+    if (!g_psram.present || !g_psram.initialised || !clk_hz || !max_sck_hz) return 0;
+    // psram_configure_params() of SDK 2.3.0, rule for rule: divisor 1 not above 100 MHz,
+    // one more half cycle of RX delay when SCK is above 100 MHz.
+    uint32_t divisor = (clk_hz + max_sck_hz - 1u) / max_sck_hz;
+    if (divisor == 1u && clk_hz > 100000000u) divisor = 2u;
+    uint32_t rxdelay = divisor;
+    if (clk_hz / divisor > 100000000u) rxdelay += 1u;
+    uint32_t period_fs = (uint32_t)(1000000000000000ull / clk_hz);
+    uint32_t max_select = (uint32_t)(((uint64_t)PICO_DEFAULT_PSRAM_MAX_SELECT * 1000000ull) /
+                                     (64ull * (uint64_t)period_fs));
+    uint32_t need = (PICO_DEFAULT_PSRAM_MIN_DESELECT * 1000000u + (period_fs - 1u)) / period_fs;
+    uint32_t min_deselect = need > (divisor + 1u) / 2u ? need - (divisor + 1u) / 2u : 0u;
+    if (divisor > 255u || rxdelay > 7u || max_select > 63u || min_deselect > 31u) return 0;
+    uint32_t timing = 1u << QMI_M1_TIMING_COOLDOWN_LSB |
+                      QMI_M1_TIMING_PAGEBREAK_VALUE_1024 << QMI_M1_TIMING_PAGEBREAK_LSB |
+                      max_select << QMI_M1_TIMING_MAX_SELECT_LSB |
+                      min_deselect << QMI_M1_TIMING_MIN_DESELECT_LSB |
+                      rxdelay << QMI_M1_TIMING_RXDELAY_LSB |
+                      divisor << QMI_M1_TIMING_CLKDIV_LSB;
+    xip_cache_clean_all();   // dirty lines go back with the timing they were read with
+    write_m1_timing(timing);
+    return divisor;
+}
+
 // READ ID on CS1 with the pin already routed; returns MFID/KGD/EID bytes.
 static void read_id(uint8_t out[3]) {
     flash_devinfo_size_t prev = flash_devinfo_get_cs_size(1);
@@ -73,7 +118,42 @@ static void read_id(uint8_t out[3]) {
     out[2] = rx[6];   // EID: density and generation
 }
 
+#define PSRAM_KEEP_MAGIC 0x50535241u   // "PSRA"
+// What psram.detect found in this run, kept across a watchdog reset (see psram_resume()).
+static psram_info_t __uninitialized_ram(s_keep);
+static uint32_t __uninitialized_ram(s_keep_tag);
+
+static test_result_t detect(test_ctx_t *ctx);
+
+static uint32_t keep_tag(uint32_t run_nonce) {
+    return PSRAM_KEEP_MAGIC ^ run_nonce;
+}
+
 test_result_t test_psram_detect(test_ctx_t *ctx) {
+    test_result_t r = detect(ctx);
+    s_keep = g_psram;
+    s_keep_tag = keep_tag(record_run_state()->run_nonce);
+    return r;
+}
+
+bool psram_resume(uint32_t run_nonce) {
+    if (s_keep_tag != keep_tag(run_nonce) || !s_keep.present || !s_keep.initialised) return false;
+    g_psram = s_keep;
+    g_psram.initialised = false;
+    flash_devinfo_set_cs_gpio(1, g_psram.cs_gpio);
+    gpio_set_function(g_psram.cs_gpio, GPIO_FUNC_XIP_CS1);
+    flash_devinfo_set_cs_size(1, flash_devinfo_bytes_to_size(g_psram.size));
+    uint8_t id[3];
+    read_id(id);
+    if (id[1] != s_keep.id[1] || id[2] != s_keep.id[2] || !psram_reapply()) {
+        memset(&g_psram, 0, sizeof(g_psram));
+        flash_devinfo_set_cs_size(1, FLASH_DEVINFO_SIZE_NONE);
+        return false;
+    }
+    return true;
+}
+
+static test_result_t detect(test_ctx_t *ctx) {
     memset(&g_psram, 0, sizeof(g_psram));
     uint8_t pins[4];
     unsigned n = 0;

@@ -4,6 +4,11 @@
 /dist/backup/
 # Debug variants (PICOBENCH_VARIANT=crashtest) are not release artifacts
 /dist/*_crashtest.uf2
+# Local ARM workload: excerpts of commercial games, never published (workload/README.md).
+# Also the UF2s built with it and the recorder tools built next to it.
+/workload/*
+!/workload/README.md
+/dist/*_local.uf2
 # macOS
 .DS_Store
 # Python

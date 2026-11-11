@@ -14,6 +14,7 @@
 
 #include <string.h>
 
+#include "core/bench.h"
 #include "core/guard.h"
 #include "hardware/flash.h"
 #include "hardware/sync.h"
@@ -83,13 +84,16 @@ test_result_t test_flash_write_scratch(test_ctx_t *ctx) {
     errors += verify(ctx, "programmed_page", base, s_page, FLASH_PAGE_SIZE);
     guard_keepalive();
 
-    // 3. Program the rest of the sector in one call (15 pages).
-    static uint8_t rest[FLASH_SECTOR_SIZE - FLASH_PAGE_SIZE];
-    for (uint32_t i = 0; i < sizeof(rest); i++) rest[i] = PATTERN_BYTE(i + FLASH_PAGE_SIZE);
-    us = timed_program(base + FLASH_PAGE_SIZE, rest, sizeof(rest));
+    // 3. Program the rest of the sector in one call (15 pages). The data lives in the
+    //    shared sample buffer (a static array here cost the RP2040's record arena 3.75 KB).
+    uint8_t *rest = (uint8_t *)g_bench_samples;
+    const uint32_t rest_len = FLASH_SECTOR_SIZE - FLASH_PAGE_SIZE;
+    _Static_assert(sizeof(g_bench_samples) >= FLASH_SECTOR_SIZE - FLASH_PAGE_SIZE, "sample buffer too small");
+    for (uint32_t i = 0; i < rest_len; i++) rest[i] = PATTERN_BYTE(i + FLASH_PAGE_SIZE);
+    us = timed_program(base + FLASH_PAGE_SIZE, rest, rest_len);
     rec_value(ctx, "program_rest_of_sector", UNIT_US, us);
-    rec_value(ctx, "program_sector_rate", UNIT_KBPS, us ? (int64_t)((uint64_t)sizeof(rest) * 1000u / us) : 0);
-    errors += verify(ctx, "programmed_rest", base + FLASH_PAGE_SIZE, rest, sizeof(rest));
+    rec_value(ctx, "program_sector_rate", UNIT_KBPS, us ? (int64_t)((uint64_t)rest_len * 1000u / us) : 0);
+    errors += verify(ctx, "programmed_rest", base + FLASH_PAGE_SIZE, rest, rest_len);
     guard_keepalive();
 
     // 4. Erase four sectors at once: the per-sector cost of a larger erase.
